@@ -81,8 +81,13 @@ orcaai:
     mail-from: ${MAIL_FROM}
     email-verification-ttl: 24h
     password-reset-ttl: 30m
+    invitation-ttl: 72h
     # Minimum interval between emails of the same kind to one account.
     email-cooldown: 2m
+  team:
+    # Invitation emails (new or resent) per authenticated user and per organization, per hour.
+    invitations-per-user-per-hour: 30
+    invitations-per-organization-per-hour: 100
   security:
     rate-limit:
       login:

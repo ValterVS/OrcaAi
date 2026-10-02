@@ -67,6 +67,8 @@ class AccountEmailsIntegrationTest {
 
         assertThat(emailExecutor.getMaxPoolSize()).isEqualTo(2);
         assertThat(emailExecutor.getQueueCapacity()).isEqualTo(500);
+        assertThat(emailExecutor.getThreadPoolExecutor().getRejectedExecutionHandler())
+                .isInstanceOf(java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy.class);
         assertThat(mail.senderThreads()).isNotEmpty().allMatch(name -> name.startsWith("account-email-"));
     }
 

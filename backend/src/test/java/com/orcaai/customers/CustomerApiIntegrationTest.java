@@ -127,37 +127,52 @@ class CustomerApiIntegrationTest {
     }
 
     @Test
-    void updatesWithTheVersionTheClientRead() throws Exception {
+    void singleCustomerResponsesCarryTheVersionAsETag() throws Exception {
         String id = createdId(owner, "{\"name\":\"Carlos\"}");
 
-        mvc.perform(update(member, id, "0", "{\"name\":\"Carlos Pereira\",\"phone\":\"1199\"}"))
+        mvc.perform(get("/api/customers/" + id).with(as(member)))
+                .andExpect(header().string("ETag", "\"0\""))
+                .andExpect(jsonPath("$.version").doesNotExist());
+        mvc.perform(update(member, id, "\"0\"", "{\"name\":\"Carlos Pereira\",\"phone\":\"1199\"}"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"1\""))
                 .andExpect(jsonPath("$.name").value("Carlos Pereira"))
-                .andExpect(jsonPath("$.phone").value("1199"))
-                .andExpect(jsonPath("$.version").value(1));
+                .andExpect(jsonPath("$.phone").value("1199"));
+        assertThat(etag(id)).isEqualTo("\"1\"");
     }
 
     @Test
-    void refusesAnEditBasedOnAStaleVersion() throws Exception {
+    void staleIfMatchIsRefusedWith412AndChangesNothing() throws Exception {
         String id = createdId(owner, "{\"name\":\"Carlos\"}");
         mvc.perform(update(owner, id, "\"0\"", "{\"name\":\"Primeira edição\"}")).andExpect(status().isOk());
 
         mvc.perform(update(member, id, "\"0\"", "{\"name\":\"Edição atrasada\"}"))
-                .andExpect(status().isConflict())
+                .andExpect(status().isPreconditionFailed())
                 .andExpect(jsonPath("$.detail").value(
                         "Este registro foi alterado por outra pessoa. Recarregue a página para ver a versão mais recente."));
+        mvc.perform(post("/api/customers/" + id + "/archive").with(as(owner)).with(csrfToken(mvc)).header("If-Match", "\"0\""))
+                .andExpect(status().isPreconditionFailed());
+        mvc.perform(post("/api/customers/" + id + "/restore").with(as(owner)).with(csrfToken(mvc)).header("If-Match", "\"0\""))
+                .andExpect(status().isPreconditionFailed());
 
-        mvc.perform(get("/api/customers/" + id).with(as(owner))).andExpect(jsonPath("$.name").value("Primeira edição"));
+        mvc.perform(get("/api/customers/" + id).with(as(owner)))
+                .andExpect(jsonPath("$.name").value("Primeira edição"))
+                .andExpect(jsonPath("$.archived").value(false));
     }
 
     @Test
-    void editRequiresAVersion() throws Exception {
+    void changesRequireIfMatch() throws Exception {
         String id = createdId(owner, "{\"name\":\"Carlos\"}");
 
         mvc.perform(put("/api/customers/" + id).with(as(owner)).with(csrfToken(mvc))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Sem versão\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isPreconditionRequired());
+        mvc.perform(post("/api/customers/" + id + "/archive").with(as(owner)).with(csrfToken(mvc)))
+                .andExpect(status().isPreconditionRequired());
+        mvc.perform(post("/api/customers/" + id + "/restore").with(as(owner)).with(csrfToken(mvc)))
+                .andExpect(status().isPreconditionRequired());
         mvc.perform(update(owner, id, "abc", "{\"name\":\"Versão ruim\"}")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/customers/" + id).with(as(owner))).andExpect(jsonPath("$.name").value("Carlos"));
     }
 
     @Test
@@ -218,16 +233,18 @@ class CustomerApiIntegrationTest {
     void archivedCustomersLeaveTheActiveListAndCanBeRestored() throws Exception {
         String id = createdId(owner, "{\"name\":\"Cliente Antigo\"}");
 
-        mvc.perform(post("/api/customers/" + id + "/archive").with(as(admin)).with(csrfToken(mvc)))
+        mvc.perform(action(admin, id, "archive", etag(id)))
                 .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"1\""))
                 .andExpect(jsonPath("$.archived").value(true));
         assertThat(listNames("ACTIVE")).doesNotContain("Cliente Antigo");
         assertThat(listNames("ARCHIVED")).containsExactly("Cliente Antigo");
         assertThat(listNames("ALL")).containsExactly("Cliente Antigo");
         mvc.perform(get("/api/customers/" + id).with(as(member))).andExpect(jsonPath("$.archived").value(true));
 
-        mvc.perform(post("/api/customers/" + id + "/restore").with(as(owner)).with(csrfToken(mvc)))
+        mvc.perform(action(owner, id, "restore", etag(id)))
                 .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"2\""))
                 .andExpect(jsonPath("$.archived").value(false));
         assertThat(listNames("ACTIVE")).containsExactly("Cliente Antigo");
         assertThat(listNames("ARCHIVED")).isEmpty();
@@ -236,14 +253,11 @@ class CustomerApiIntegrationTest {
     @Test
     void memberCanCreateAndEditButNotArchiveOrRestore() throws Exception {
         String id = createdId(member, "{\"name\":\"Do Membro\"}");
-        mvc.perform(update(member, id, "0", "{\"name\":\"Do Membro Editado\"}")).andExpect(status().isOk());
+        mvc.perform(update(member, id, "\"0\"", "{\"name\":\"Do Membro Editado\"}")).andExpect(status().isOk());
 
-        mvc.perform(post("/api/customers/" + id + "/archive").with(as(member)).with(csrfToken(mvc)))
-                .andExpect(status().isForbidden());
-        mvc.perform(post("/api/customers/" + id + "/archive").with(as(owner)).with(csrfToken(mvc)))
-                .andExpect(status().isOk());
-        mvc.perform(post("/api/customers/" + id + "/restore").with(as(member)).with(csrfToken(mvc)))
-                .andExpect(status().isForbidden());
+        mvc.perform(action(member, id, "archive", etag(id))).andExpect(status().isForbidden());
+        mvc.perform(action(owner, id, "archive", etag(id))).andExpect(status().isOk());
+        mvc.perform(action(member, id, "restore", etag(id))).andExpect(status().isForbidden());
 
         assertThat(listNames("ARCHIVED")).containsExactly("Do Membro Editado");
     }
@@ -282,6 +296,15 @@ class CustomerApiIntegrationTest {
         return put("/api/customers/" + id).with(as(user)).with(csrfToken(mvc))
                 .header("If-Match", ifMatch)
                 .contentType(MediaType.APPLICATION_JSON).content(body);
+    }
+
+    private org.springframework.test.web.servlet.RequestBuilder action(User user, String id, String action, String ifMatch)
+            throws Exception {
+        return post("/api/customers/" + id + "/" + action).with(as(user)).with(csrfToken(mvc)).header("If-Match", ifMatch);
+    }
+
+    private String etag(String id) throws Exception {
+        return mvc.perform(get("/api/customers/" + id).with(as(owner))).andReturn().getResponse().getHeader("ETag");
     }
 
     private List<String> searchNames(String term) throws Exception {

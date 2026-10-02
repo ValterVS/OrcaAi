@@ -1,12 +1,13 @@
 package com.orcaai.identity;
 
+import com.orcaai.shared.security.Password;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
  * Only what sign-up needs. Organization, role and ids are decided by the backend; unknown JSON
- * properties (such as organizationId or role) are ignored.
+ * properties (such as organizationId or role) are rejected.
  */
 record SignupRequest(
         @NotBlank(message = "Informe o nome da empresa.")

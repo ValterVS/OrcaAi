@@ -99,4 +99,23 @@ public class User extends BaseEntity {
     public void changePassword(String newPasswordHash) {
         this.passwordHash = newPasswordHash;
     }
+
+    /** OWNER is never assigned or removed this way: there is exactly one, created at sign-up. */
+    public void changeRole(Role newRole) {
+        if (role == Role.OWNER || newRole == Role.OWNER) {
+            throw new IllegalStateException("The OWNER role cannot be changed");
+        }
+        this.role = newRole;
+    }
+
+    public void deactivate() {
+        if (role == Role.OWNER) {
+            throw new IllegalStateException("The OWNER cannot be deactivated");
+        }
+        this.active = false;
+    }
+
+    public void reactivate() {
+        this.active = true;
+    }
 }

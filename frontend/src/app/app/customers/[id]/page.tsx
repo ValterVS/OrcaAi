@@ -17,10 +17,11 @@ type Props = {
 // A customer of another organization is "not found", exactly like a nonexistent one.
 export default async function CustomerPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const [customer, account, search] = await Promise.all([getCustomer(id), getCurrentAccount(), searchParams]);
-  if (!customer || !account) {
+  const [loaded, account, search] = await Promise.all([getCustomer(id), getCurrentAccount(), searchParams]);
+  if (!loaded || !account) {
     notFound();
   }
+  const { customer } = loaded;
 
   return (
     <>
@@ -31,6 +32,7 @@ export default async function CustomerPage({ params, searchParams }: Props) {
       <div className="panel">
         <CustomerDetail
           customer={customer}
+          etag={loaded.etag}
           canArchive={canArchiveCustomers(account.role)}
           justCreated={search.created === "1"}
         />

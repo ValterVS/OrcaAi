@@ -1,9 +1,8 @@
 package com.orcaai.customers;
 
-import com.orcaai.shared.error.ConflictException;
-import com.orcaai.shared.error.GlobalExceptionHandler;
 import com.orcaai.shared.error.ResourceNotFoundException;
 import com.orcaai.shared.tenancy.TenantContext;
+import com.orcaai.shared.web.EntityTags;
 import java.time.Instant;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -54,9 +53,7 @@ class CustomerService {
     @Transactional
     public Customer update(UUID id, long expectedVersion, CustomerDetails details) {
         Customer customer = find(id);
-        if (customer.getVersion() != expectedVersion) {
-            throw new ConflictException(GlobalExceptionHandler.CONCURRENT_CHANGE);
-        }
+        EntityTags.requireCurrent(expectedVersion, customer.getVersion());
         customer.update(details);
         customers.flush();
         log.info("Customer {} updated", id);
@@ -65,8 +62,9 @@ class CustomerService {
 
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     @Transactional
-    public Customer archive(UUID id) {
+    public Customer archive(UUID id, long expectedVersion) {
         Customer customer = find(id);
+        EntityTags.requireCurrent(expectedVersion, customer.getVersion());
         customer.archive(Instant.now());
         customers.flush();
         log.info("Customer {} archived", id);
@@ -75,8 +73,9 @@ class CustomerService {
 
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     @Transactional
-    public Customer restore(UUID id) {
+    public Customer restore(UUID id, long expectedVersion) {
         Customer customer = find(id);
+        EntityTags.requireCurrent(expectedVersion, customer.getVersion());
         customer.restore();
         customers.flush();
         log.info("Customer {} restored", id);

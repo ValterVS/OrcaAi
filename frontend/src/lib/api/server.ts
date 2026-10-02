@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { CurrentAccount } from "./auth";
 import type { Customer, CustomerPage, CustomerStatus } from "./customers";
+import type { Invitation, Member } from "./team";
 
 // Server-side only. BACKEND_URL is not exposed to the browser (no NEXT_PUBLIC_ prefix).
 const backendUrl = process.env.BACKEND_URL ?? "http://localhost:8080";
@@ -53,11 +54,28 @@ export async function getCustomers(query: { status: CustomerStatus; q: string; p
   return readOrFail<CustomerPage>(await backendGet(`/customers?${params}`), "customers");
 }
 
-/** Null when the customer does not exist for this organization (or the id is malformed). */
-export async function getCustomer(id: string): Promise<Customer | null> {
+/**
+ * The customer and its ETag (the version to send back in If-Match), or null when the customer does
+ * not exist for this organization (or the id is malformed).
+ */
+export async function getCustomer(id: string): Promise<{ customer: Customer; etag: string } | null> {
   const response = await backendGet(`/customers/${encodeURIComponent(id)}`);
   if (response && (response.status === 404 || response.status === 400)) {
     return null;
   }
-  return readOrFail<Customer>(response, "customer");
+  const customer = await readOrFail<Customer>(response, "customer");
+  return { customer, etag: response?.headers.get("ETag") ?? "" };
+}
+
+export async function getTeamMembers(): Promise<Member[]> {
+  return readOrFail<Member[]>(await backendGet("/team/members"), "team members");
+}
+
+/** Pending invitations, or null for roles that may not see them (the backend answers 403). */
+export async function getPendingInvitations(): Promise<Invitation[] | null> {
+  const response = await backendGet("/team/invitations");
+  if (response?.status === 403) {
+    return null;
+  }
+  return readOrFail<Invitation[]>(response, "invitations");
 }

@@ -20,6 +20,7 @@ public record AccountProperties(
         @NotBlank @Email String mailFrom,
         @NotNull Duration emailVerificationTtl,
         @NotNull Duration passwordResetTtl,
+        @NotNull Duration invitationTtl,
         @NotNull Duration emailCooldown) {
 
     private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1");

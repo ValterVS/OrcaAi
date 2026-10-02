@@ -11,7 +11,6 @@ export type Customer = {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
-  version: number;
 };
 
 export type CustomerPage = {
@@ -37,15 +36,18 @@ export function createCustomer(input: CustomerInput): Promise<Customer> {
   return sendJson<Customer>("POST", "/customers", input);
 }
 
-/** Saves only if nobody changed the customer since {@code version} was read (409 otherwise). */
-export function updateCustomer(id: string, version: number, input: CustomerInput): Promise<Customer> {
-  return sendJson<Customer>("PUT", customerPath(id), input, { "If-Match": `"${version}"` });
+/**
+ * Changes send back the ETag the customer was read with (If-Match); if someone changed it since,
+ * the backend answers 412 and nothing is overwritten.
+ */
+export function updateCustomer(id: string, etag: string, input: CustomerInput): Promise<Customer> {
+  return sendJson<Customer>("PUT", customerPath(id), input, { "If-Match": etag });
 }
 
-export function archiveCustomer(id: string): Promise<Customer> {
-  return sendJson<Customer>("POST", customerPath(id, "/archive"));
+export function archiveCustomer(id: string, etag: string): Promise<Customer> {
+  return sendJson<Customer>("POST", customerPath(id, "/archive"), undefined, { "If-Match": etag });
 }
 
-export function restoreCustomer(id: string): Promise<Customer> {
-  return sendJson<Customer>("POST", customerPath(id, "/restore"));
+export function restoreCustomer(id: string, etag: string): Promise<Customer> {
+  return sendJson<Customer>("POST", customerPath(id, "/restore"), undefined, { "If-Match": etag });
 }

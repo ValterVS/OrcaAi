@@ -1,22 +1,17 @@
 package com.orcaai.identity;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
+import com.orcaai.shared.security.SecureTokens;
 import java.sql.Timestamp;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Single-use tokens sent by email. The raw token is returned once to be put in the email and is
- * never stored: the database keeps its SHA-256, which is enough for a 256-bit random value.
+ * Single-use tokens sent by email ({@link SecureTokens}): the raw token is returned once to be put
+ * in the email; the database keeps only its hash.
  *
  * <p>Must be called inside a transaction. Consumption is a conditional UPDATE, so two concurrent
  * requests with the same token cannot both succeed.
@@ -55,10 +50,6 @@ class OneTimeTokens {
         }
     }
 
-    private static final int TOKEN_BYTES = 32;
-    private static final Pattern TOKEN_FORMAT = Pattern.compile("[A-Za-z0-9_-]{43}");
-    private static final SecureRandom RANDOM = new SecureRandom();
-
     private final JdbcTemplate jdbc;
 
     OneTimeTokens(JdbcTemplate jdbc) {
@@ -71,21 +62,19 @@ class OneTimeTokens {
         jdbc.queryForObject("select id from users where id = ? for update", UUID.class, userId);
         expireUnused(purpose, userId);
 
-        byte[] raw = new byte[TOKEN_BYTES];
-        RANDOM.nextBytes(raw);
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        String token = SecureTokens.generate();
         jdbc.update("insert into " + purpose.table + " (user_id, token_hash, created_at, expires_at)"
                         + " values (?, ?, now(), now() + ? * interval '1 second')",
-                userId, hash(token), ttl.toSeconds());
+                userId, SecureTokens.hash(token), ttl.toSeconds());
         return token;
     }
 
     /** Marks the token as used and returns its user, or throws with the reason it cannot be used. */
     UUID consume(Purpose purpose, String token) {
-        if (token == null || !TOKEN_FORMAT.matcher(token).matches()) {
+        if (!SecureTokens.isWellFormed(token)) {
             throw new RejectedException(Rejection.INVALID);
         }
-        byte[] tokenHash = hash(token);
+        byte[] tokenHash = SecureTokens.hash(token);
         List<UUID> consumed = jdbc.queryForList(
                 "update " + purpose.table + " set consumed_at = now()"
                         + " where token_hash = ? and consumed_at is null and expires_at > now() returning user_id",
@@ -115,13 +104,5 @@ class OneTimeTokens {
             return Rejection.INVALID;
         }
         return rows.getFirst().get("consumed_at") instanceof Timestamp ? Rejection.USED : Rejection.EXPIRED;
-    }
-
-    static byte[] hash(String token) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.US_ASCII));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required by the Java platform", ex);
-        }
     }
 }

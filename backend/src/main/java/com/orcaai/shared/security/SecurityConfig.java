@@ -35,6 +35,7 @@ class SecurityConfig {
     static final String FORGOT_PASSWORD_PATH = "/api/auth/forgot-password";
     static final String VERIFY_EMAIL_PATH = "/api/auth/verify-email";
     static final String RESET_PASSWORD_PATH = "/api/auth/reset-password";
+    static final String ACCEPT_INVITATION_PATH = "/api/invitations/accept";
 
     @Bean
     SecurityFilterChain securityFilterChain(
@@ -46,7 +47,7 @@ class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, SIGNUP_PATH, RESEND_VERIFICATION_PATH, FORGOT_PASSWORD_PATH,
-                                VERIFY_EMAIL_PATH, RESET_PASSWORD_PATH).permitAll()
+                                VERIFY_EMAIL_PATH, RESET_PASSWORD_PATH, ACCEPT_INVITATION_PATH).permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())

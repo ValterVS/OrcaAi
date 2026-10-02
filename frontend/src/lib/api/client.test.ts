@@ -34,6 +34,13 @@ describe("apiFetch", () => {
     expect(sentHeaders(fetchMock).has("X-XSRF-TOKEN")).toBe(false);
   });
 
+  it("accepts successful answers without a body", async () => {
+    vi.stubGlobal("document", { cookie: "XSRF-TOKEN=abc" });
+    mockFetch(new Response(null, { status: 201 }));
+
+    await expect(apiFetch("/invitations/accept", { method: "POST" })).resolves.toBeUndefined();
+  });
+
   it("raises ApiError with the problem details", async () => {
     mockFetch(Response.json({ title: "Bad Request", detail: "Dados inválidos." }, { status: 400 }));
 

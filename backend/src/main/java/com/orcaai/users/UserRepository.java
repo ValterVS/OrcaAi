@@ -1,5 +1,6 @@
 package com.orcaai.users;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.Query;
@@ -17,6 +18,8 @@ public interface UserRepository extends Repository<User, UUID> {
     User saveAndFlush(User user);
 
     Optional<User> findByIdAndOrganizationId(UUID id, UUID organizationId);
+
+    List<User> findByOrganizationId(UUID organizationId);
 
     /**
      * Only for identity flows where the id comes from a server-side record (a consumed one-time

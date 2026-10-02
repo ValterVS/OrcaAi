@@ -146,6 +146,6 @@ class AccountService {
 
     private void issueVerification(User user) {
         String token = tokens.issue(EMAIL_VERIFICATION, user.getId(), properties.emailVerificationTtl());
-        events.publishEvent(new AccountEmailRequested(Kind.EMAIL_VERIFICATION, user.getId(), user.getEmail(), token));
+        events.publishEvent(AccountEmailRequested.forUser(Kind.EMAIL_VERIFICATION, user.getId(), user.getEmail(), token));
     }
 }

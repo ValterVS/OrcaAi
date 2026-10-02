@@ -1,5 +1,6 @@
 package com.orcaai.identity;
 
+import com.orcaai.shared.security.SecureTokens;
 import static com.orcaai.identity.SignupIntegrationTest.uniqueCompany;
 import static com.orcaai.support.AccountApi.PASSWORD;
 import static com.orcaai.support.AccountApi.uniqueEmail;
@@ -84,7 +85,7 @@ class EmailVerificationIntegrationTest {
         api.signup(uniqueCompany(), "Pessoa", email, PASSWORD);
         String token = mail.awaitToken(email, 1);
         jdbc.update("update email_verification_tokens set expires_at = now() - interval '1 minute' where token_hash = ?",
-                OneTimeTokens.hash(token));
+                SecureTokens.hash(token));
 
         MockHttpServletResponse response = api.verify(token);
 
@@ -112,7 +113,7 @@ class EmailVerificationIntegrationTest {
         byte[] stored = jdbc.queryForObject(
                 "select token_hash from email_verification_tokens where user_id = ?", byte[].class, owner.getId());
 
-        assertThat(stored).hasSize(32).isEqualTo(OneTimeTokens.hash(token));
+        assertThat(stored).hasSize(32).isEqualTo(SecureTokens.hash(token));
         assertThat(new String(stored, java.nio.charset.StandardCharsets.ISO_8859_1)).doesNotContain(token);
     }
 

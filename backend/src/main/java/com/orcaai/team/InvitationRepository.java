@@ -1,0 +1,14 @@
+package com.orcaai.team;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+/** Tenant-filtered by Hibernate ({@code @TenantId}): every query sees only the current organization. */
+interface InvitationRepository extends JpaRepository<Invitation, UUID> {
+
+    Optional<Invitation> findByEmailAndAcceptedAtIsNullAndRevokedAtIsNull(String email);
+
+    List<Invitation> findByAcceptedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc();
+}

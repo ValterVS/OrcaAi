@@ -28,6 +28,6 @@ class AccountPropertiesTest {
 
     private static AccountProperties properties(String publicUrl) {
         return new AccountProperties(URI.create(publicUrl), "nao-responda@orcaai.com.br",
-                Duration.ofHours(24), Duration.ofMinutes(30), Duration.ofMinutes(2));
+                Duration.ofHours(24), Duration.ofMinutes(30), Duration.ofHours(72), Duration.ofMinutes(2));
     }
 }

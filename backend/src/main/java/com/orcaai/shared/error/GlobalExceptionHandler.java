@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -62,15 +63,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
-    @ExceptionHandler(ConflictException.class)
-    ProblemDetail handleConflict(ConflictException ex) {
-        return problem(HttpStatus.CONFLICT, ex.getMessage());
+    // Stale If-Match, or two transactions changed the same row at the same time (@Version):
+    // either way the client's copy is out of date.
+    @ExceptionHandler({PreconditionFailedException.class, OptimisticLockingFailureException.class})
+    ProblemDetail handlePreconditionFailed(RuntimeException ex) {
+        return problem(HttpStatus.PRECONDITION_FAILED, CONCURRENT_CHANGE);
     }
 
-    // Two transactions changed the same row at the same time (@Version).
-    @ExceptionHandler(OptimisticLockingFailureException.class)
-    ProblemDetail handleOptimisticLock(OptimisticLockingFailureException ex) {
-        return problem(HttpStatus.CONFLICT, CONCURRENT_CHANGE);
+    // A constraint caught a race the service checks could not see (e.g. two identical requests at once).
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
+        log.warn("Constraint violation on {} {}", request.getMethod(), request.getRequestURI());
+        return problem(HttpStatus.CONFLICT, "Não foi possível concluir a operação. Tente novamente.");
+    }
+
+    @ExceptionHandler(PreconditionRequiredException.class)
+    ProblemDetail handlePreconditionRequired(PreconditionRequiredException ex) {
+        return problem(HttpStatus.PRECONDITION_REQUIRED, "Recarregue a página e tente novamente.");
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

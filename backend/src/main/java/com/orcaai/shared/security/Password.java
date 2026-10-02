@@ -1,4 +1,4 @@
-package com.orcaai.identity;
+package com.orcaai.shared.security;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 @Target({ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = Password.Validator.class)
-@interface Password {
+public @interface Password {
 
     int MIN_LENGTH = 12;
     int MAX_LENGTH = 64;

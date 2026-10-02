@@ -63,7 +63,7 @@ class PasswordResetService {
             return;
         }
         String token = tokens.issue(PASSWORD_RESET, user.getId(), properties.passwordResetTtl());
-        events.publishEvent(new AccountEmailRequested(Kind.PASSWORD_RESET, user.getId(), user.getEmail(), token));
+        events.publishEvent(AccountEmailRequested.forUser(Kind.PASSWORD_RESET, user.getId(), user.getEmail(), token));
         log.info("Password reset requested for user {}", user.getId());
     }
 
@@ -89,7 +89,7 @@ class PasswordResetService {
         tokens.expireUnused(PASSWORD_RESET, userId);
         tokens.expireUnused(EMAIL_VERIFICATION, userId);
         sessions.revokeAll(user.getEmail());
-        events.publishEvent(new AccountEmailRequested(Kind.PASSWORD_CHANGED, userId, user.getEmail(), null));
+        events.publishEvent(AccountEmailRequested.forUser(Kind.PASSWORD_CHANGED, userId, user.getEmail(), null));
         log.info("Password reset completed for user {}", userId);
     }
 }

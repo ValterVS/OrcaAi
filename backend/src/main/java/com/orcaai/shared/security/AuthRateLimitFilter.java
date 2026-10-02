@@ -27,7 +27,7 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
  *   <li>Login, per address + submitted email: only failures count. There is deliberately no limit
  *       on the email alone, which would let anyone lock a victim out by failing on purpose.</li>
  *   <li>Sign-up, email requests (resend verification, forgot password) and token submissions
- *       (verify email, reset password): per client address, every attempt counts.</li>
+ *       (verify email, reset password, accept invitation): per client address, every attempt counts.</li>
  * </ul>
  * Keys never depend on whether an account exists, so a 429 reveals nothing about accounts. How
  * often an address receives emails is limited separately, by a cooldown in the database.
@@ -60,7 +60,8 @@ class AuthRateLimitFilter extends OncePerRequestFilter {
                 addressLimit(properties.emailRequests(),
                         SecurityConfig.RESEND_VERIFICATION_PATH, SecurityConfig.FORGOT_PASSWORD_PATH),
                 addressLimit(properties.tokenSubmissions(),
-                        SecurityConfig.VERIFY_EMAIL_PATH, SecurityConfig.RESET_PASSWORD_PATH));
+                        SecurityConfig.VERIFY_EMAIL_PATH, SecurityConfig.RESET_PASSWORD_PATH,
+                        SecurityConfig.ACCEPT_INVITATION_PATH));
     }
 
     @Override

@@ -99,10 +99,10 @@ Não há login automático.
 **Envio de e-mail** (`AccountEmails`):
 - Disparado por evento publicado dentro da transação e entregue **somente após o commit** (`@TransactionalEventListener`). Um rollback nunca gera e-mail com link inútil.
 - O envio é **assíncrono**, para que o tempo de resposta não revele se houve envio.
-- **Executor:** um pool próprio e limitado (`accountEmailExecutor`: 2 threads, fila de 500).
+- **Executor:** um pool próprio e limitado (`accountEmailExecutor`: 2 threads, fila de 500; ajustável por `orcaai.account.email-threads` e `email-queue-capacity`).
   - O executor padrão do Boot tem fila ilimitada e, com virtual threads, cria uma thread por tarefa; nenhum dos dois é aceitável sob flood.
-  - Com a fila cheia, o e-mail é descartado com log e o usuário pode pedir de novo; a requisição nunca falha por isso.
-  - No desligamento, aguarda até 20 s pelos envios em andamento.
+  - **Backpressure, não descarte:** com threads e fila cheias, a própria thread da requisição envia o e-mail (`CallerRunsPolicy`). A requisição fica mais lenta, mas nenhum e-mail transacional é perdido. Há teste com pool de 1 thread e fila de 1, e o E2E confirmou 15 de 15 convites entregues sob saturação.
+  - No desligamento, aguarda até 20 s pelos envios em andamento. Uma tarefa recusada com o executor já desligado não é executada; o usuário pode pedir de novo.
 - **Timeouts SMTP:** 5 s para conexão, 10 s para leitura e 10 s para escrita.
 - **Notificação de senha alterada:** enviada após cada redefinição bem-sucedida, também só depois do commit. É texto simples, sem link, token ou senha.
 - Uma falha de SMTP é registrada só com o tipo do erro (sem endereço, token ou mensagem do servidor). O cliente recebe a resposta normal e pode pedir reenvio.
@@ -111,12 +111,38 @@ Não há login automático.
 
 **Logs.** Só ID do usuário, tipo do evento e resultado. Nunca e-mail, senha, hash, token ou URL com token. Há teste (`AccountEmailsIntegrationTest`) e verificação no E2E.
 
-Riscos a tratar ao criar a gestão de usuários:
-- **Escalada de privilégio:** ADMIN não pode promover ninguém a OWNER nem alterar OWNER. Impedir a remoção do último OWNER.
-- **Sessões:** mudanças de papel, status, senha ou e-mail devem revogar sessões (seção 4).
-- **Enumeração:** o e-mail é único globalmente, então convites e signup não podem revelar que um e-mail já existe em outra organização.
-- **Auditoria:** registrar quem alterou papel ou status de quem.
-- **Listagens:** sempre filtradas por organização, com teste de isolamento como nas entidades de negócio.
+### 3.2 Equipe: convites, papéis e status
+
+**Regras** (`TeamPermissions`, aplicadas nos serviços; a interface só esconde ações):
+
+| Ação | OWNER | ADMIN | MEMBER |
+|---|---|---|---|
+| Ver a equipe | sim | sim | sim (lista básica) |
+| Convidar | ADMIN ou MEMBER | só MEMBER | não |
+| Reenviar / revogar convite | qualquer | só de MEMBER | não |
+| Alterar papel (ADMIN ↔ MEMBER) | sim | não | não |
+| Desativar / reativar | ADMIN e MEMBER | só MEMBER | não |
+
+- **Um OWNER por organização:** o banco garante com o índice único parcial `users_one_owner_per_organization_uk`. O OWNER não pode ser convidado (o enum da requisição não aceita `OWNER`, e há um CHECK no banco), demovido nem desativado. Ninguém altera o próprio papel ou status. Transferência de propriedade fica para depois.
+- **Isolamento:** `users` não tem filtro automático de tenant, então toda operação de gestão usa `findByIdAndOrganizationId(id, organização da sessão)`. Usuário de outra organização recebe 404. Convites são `TenantOwnedEntity` (filtro do Hibernate).
+- **Ordem das verificações:** 404 (não existe nesta organização), depois 403 (sem permissão), depois 412 (versão desatualizada).
+- **Sessões:** alterar papel ou desativar chama `UserSessions.revokeAll`, então as sessões antigas recebem 401. Desativado não consegue entrar; reativado entra com a senha que já tinha.
+- **Concorrência:** a lista de membros traz `version`, e as ações exigem `If-Match` (412 se desatualizado, 428 se ausente).
+
+**Convites** (`organization_invitations`, `V7`):
+- **Token:** `SecureTokens` (32 bytes aleatórios, só o SHA-256 armazenado), com validade de 72 h (`orcaai.account.invitation-ttl`). O link vai no fragmento (`/accept-invite#token=…`); a página apaga o token da barra e a aceitação é um `POST`.
+- **Um convite pendente por organização e e-mail** (índice único parcial). Convidar o mesmo endereço de novo **renova** esse convite (novo token, nova validade, papel possivelmente novo), e o link anterior deixa de funcionar na hora. Reenviar faz o mesmo sem mudar o papel. Revogar invalida imediatamente.
+- **Abuso:** cooldown de 2 min por convite, mais limite por hora de 30 envios por usuário e 100 por organização (em memória). A aceitação pública tem o limite por IP das submissões de token e nunca é afetada por esses limites.
+- **Enumeração:** um endereço que já tem conta, nesta ou em outra organização, recebe sempre "Não foi possível enviar o convite para este endereço.". O e-mail é único globalmente, então a recusa em si é inevitável, mas nenhum detalhe sobre a outra empresa é revelado.
+- **Aceitação** (`POST /api/invitations/accept`: token, nome e senha), numa transação:
+  - o convite é consumido por `UPDATE` condicional (com várias requisições concorrentes, uma vence e as outras recebem "já utilizado");
+  - e-mail, organização e papel vêm do convite;
+  - o usuário é criado com `email_verified_at` preenchido, porque o link prova a posse do endereço;
+  - a senha segue a política de sempre, e não há login automático.
+- **Sem RLS** em `organization_invitations`: a aceitação lê por token antes de existir tenant (mesma exceção de `users` e das tabelas de token).
+- **Logs** com IDs de quem age, do alvo, do convite e da organização; nunca token, senha ou e-mail.
+
+Ainda não há trilha de auditoria persistente para essas operações.
 
 ## 4. Sessões e permissões desatualizadas
 
@@ -133,7 +159,7 @@ Estratégia: **revogação explícita** via `UserSessions.revokeAll(email)`, que
 
 `revokeAll` apaga as sessões **na transação de quem chama** (se a alteração falhar, as sessões ficam) e de novo **logo após o commit**. A segunda passada fecha a janela em que um login com a senha antiga, feito enquanto a alteração ainda não estava confirmada, ficaria com sessão válida. Se a repetição pós-commit falhar, isso é registrado em log de erro.
 
-Pendência explícita: quando a gestão de usuários existir, cada operação acima precisa de um teste de integração provando que a sessão anterior recebe 401. O mecanismo base já está coberto por `UserSessionsIntegrationTest`.
+Cobertura: `MemberManagementIntegrationTest` prova, com sessões reais, que alterar papel ou desativar faz a sessão anterior receber 401. A redefinição de senha está coberta em `PasswordResetIntegrationTest`. Troca de e-mail ainda não existe; quando existir, precisa do mesmo teste.
 
 Alternativa descartada por enquanto: revalidar o usuário no banco a cada requisição. É mais robusta contra esquecimento, mas custa uma consulta por requisição. Reavaliar se o número de pontos que alteram usuários crescer.
 

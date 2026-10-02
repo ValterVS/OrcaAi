@@ -1,5 +1,6 @@
 package com.orcaai.customers;
 
+import com.orcaai.shared.web.EntityTags;
 import com.orcaai.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -19,8 +20,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * No DELETE: customers are archived and restored. Saving an edit requires the version the client
- * read, in the If-Match header.
+ * No DELETE: customers are archived and restored. A single customer is returned with
+ * {@code ETag: "<version>"}; edit, archive and restore require it back in If-Match (see EntityTags).
  */
 @RestController
 @RequestMapping("/api/customers")
@@ -42,31 +43,39 @@ class CustomerController {
     }
 
     @GetMapping("/{id}")
-    CustomerResponse get(@PathVariable UUID id) {
-        return CustomerResponse.of(service.get(id));
+    ResponseEntity<CustomerResponse> get(@PathVariable UUID id) {
+        return withTag(service.get(id));
     }
 
     @PostMapping
     ResponseEntity<CustomerResponse> create(@Valid @RequestBody CustomerDetails details) {
-        CustomerResponse created = CustomerResponse.of(service.create(details));
-        return ResponseEntity.created(URI.create("/api/customers/" + created.id())).body(created);
+        Customer customer = service.create(details);
+        return ResponseEntity.created(URI.create("/api/customers/" + customer.getId()))
+                .eTag(EntityTags.of(customer.getVersion()))
+                .body(CustomerResponse.of(customer));
     }
 
     @PutMapping("/{id}")
-    CustomerResponse update(
+    ResponseEntity<CustomerResponse> update(
             @PathVariable UUID id,
-            @RequestHeader("If-Match") String ifMatch,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch,
             @Valid @RequestBody CustomerDetails details) {
-        return CustomerResponse.of(service.update(id, IfMatch.version(ifMatch), details));
+        return withTag(service.update(id, EntityTags.expectedVersion(ifMatch), details));
     }
 
     @PostMapping("/{id}/archive")
-    CustomerResponse archive(@PathVariable UUID id) {
-        return CustomerResponse.of(service.archive(id));
+    ResponseEntity<CustomerResponse> archive(
+            @PathVariable UUID id, @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        return withTag(service.archive(id, EntityTags.expectedVersion(ifMatch)));
     }
 
     @PostMapping("/{id}/restore")
-    CustomerResponse restore(@PathVariable UUID id) {
-        return CustomerResponse.of(service.restore(id));
+    ResponseEntity<CustomerResponse> restore(
+            @PathVariable UUID id, @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        return withTag(service.restore(id, EntityTags.expectedVersion(ifMatch)));
+    }
+
+    private static ResponseEntity<CustomerResponse> withTag(Customer customer) {
+        return ResponseEntity.ok().eTag(EntityTags.of(customer.getVersion())).body(CustomerResponse.of(customer));
     }
 }

@@ -73,6 +73,9 @@ class DatabasePrivilegesIntegrationTest {
         assertThat(privilege("users", "TRUNCATE")).isFalse();
         assertThat(privilege("users", "UPDATE")).isTrue();
         assertThat(privilege("spring_session", "DELETE")).isTrue();
+        assertThat(privilege("organization_invitations", "UPDATE")).isTrue();
+        assertThat(privilege("organization_invitations", "DELETE")).isFalse();
+        assertThat(privilege("organization_invitations", "TRUNCATE")).isFalse();
         assertThat(privilege("customers", "SELECT")).isTrue();
         assertThat(privilege("customers", "UPDATE")).isTrue();
         assertThat(privilege("customers", "DELETE")).isFalse();

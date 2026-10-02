@@ -4,11 +4,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { archiveCustomer, restoreCustomer, updateCustomer, type Customer } from "@/lib/api/customers";
 import { formatDateTime } from "@/lib/customers";
-import { genericErrorMessage } from "@/lib/messages";
+import { actionErrorMessage } from "@/lib/messages";
 import { CustomerForm } from "./CustomerForm";
 
 type CustomerDetailProps = {
   customer: Customer;
+  /** ETag of {@code customer}, sent back as If-Match on every change. */
+  etag: string;
   canArchive: boolean;
   justCreated: boolean;
 };
@@ -23,7 +25,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 }
 
 /** All values are rendered as text; nothing the user typed is ever interpreted as HTML. */
-export function CustomerDetail({ customer, canArchive, justCreated }: CustomerDetailProps) {
+export function CustomerDetail({ customer, etag, canArchive, justCreated }: CustomerDetailProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(justCreated ? "Cliente cadastrado com sucesso." : null);
@@ -35,11 +37,11 @@ export function CustomerDetail({ customer, canArchive, justCreated }: CustomerDe
     setError(null);
     setNotice(null);
     try {
-      await action(customer.id);
+      await action(customer.id, etag);
       setNotice(done);
       router.refresh();
     } catch (failure) {
-      setError(genericErrorMessage(failure));
+      setError(actionErrorMessage(failure));
     } finally {
       setPending(false);
     }
@@ -56,7 +58,7 @@ export function CustomerDetail({ customer, canArchive, justCreated }: CustomerDe
         }}
         submitLabel="Salvar alterações"
         pendingLabel="Salvando..."
-        onSubmit={(input) => updateCustomer(customer.id, customer.version, input)}
+        onSubmit={(input) => updateCustomer(customer.id, etag, input)}
         onSaved={() => {
           setEditing(false);
           setNotice("Alterações salvas.");

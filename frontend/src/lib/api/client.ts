@@ -60,10 +60,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (!response.ok) {
     throw new ApiError(await toProblem(response));
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
+  // Some successful answers have no body (204, or 201 without content).
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 /** For state-changing calls outside the auth flow: makes sure a CSRF token exists, then sends JSON. */

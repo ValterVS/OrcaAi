@@ -15,11 +15,11 @@ describe("customer API", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sends the version read in If-Match together with the CSRF token", async () => {
+  it("sends the ETag read in If-Match together with the CSRF token", async () => {
     vi.stubGlobal("document", { cookie: "XSRF-TOKEN=abc" });
     const fetchMock = mockFetch(Response.json({ id: "c 1" }));
 
-    await updateCustomer("c 1", 7, { name: "João", phone: "", email: "", notes: "" });
+    await updateCustomer("c 1", '"7"', { name: "João", phone: "", email: "", notes: "" });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/customers/c%201");
@@ -44,9 +44,10 @@ describe("customer API", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await archiveCustomer("c1");
+    await archiveCustomer("c1", '"2"');
 
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(["/api/auth/csrf", "/api/customers/c1/archive"]);
     expect(fetchMock.mock.calls[1][1].headers.get("X-XSRF-TOKEN")).toBe("novo");
+    expect(fetchMock.mock.calls[1][1].headers.get("If-Match")).toBe('"2"');
   });
 });

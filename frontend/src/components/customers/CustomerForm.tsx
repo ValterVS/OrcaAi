@@ -6,7 +6,7 @@ import { TextField } from "@/components/form/TextField";
 import { ApiError } from "@/lib/api/client";
 import type { Customer, CustomerInput } from "@/lib/api/customers";
 import { validateCustomer } from "@/lib/customers";
-import { genericErrorMessage } from "@/lib/messages";
+import { actionErrorMessage } from "@/lib/messages";
 import { hasErrors, type FieldErrors } from "@/lib/validation";
 
 type CustomerFormProps = {
@@ -19,13 +19,6 @@ type CustomerFormProps = {
 };
 
 const EMPTY: CustomerInput = { name: "", phone: "", email: "", notes: "" };
-
-function messageFor(error: unknown): string {
-  if (error instanceof ApiError && error.status === 409 && error.problem.detail) {
-    return error.problem.detail;
-  }
-  return genericErrorMessage(error);
-}
 
 export function CustomerForm({ initial = EMPTY, submitLabel, pendingLabel, onSubmit, onSaved, onCancel }: CustomerFormProps) {
   const [values, setValues] = useState<CustomerInput>(initial);
@@ -57,7 +50,7 @@ export function CustomerForm({ initial = EMPTY, submitLabel, pendingLabel, onSub
         }
         setFieldErrors(serverErrors);
       } else {
-        setFormError(messageFor(error));
+        setFormError(actionErrorMessage(error));
       }
     } finally {
       setSubmitting(false);

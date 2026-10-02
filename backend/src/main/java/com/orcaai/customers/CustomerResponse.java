@@ -3,10 +3,7 @@ package com.orcaai.customers;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * {@code version} is sent back in the If-Match header when saving, so an edit based on stale data
- * is refused instead of silently overwriting someone else's change.
- */
+/** The version travels in the ETag header, not in the body. */
 record CustomerResponse(
         UUID id,
         String name,
@@ -15,12 +12,10 @@ record CustomerResponse(
         String notes,
         boolean archived,
         Instant createdAt,
-        Instant updatedAt,
-        long version) {
+        Instant updatedAt) {
 
     static CustomerResponse of(Customer customer) {
         return new CustomerResponse(customer.getId(), customer.getName(), customer.getPhone(), customer.getEmail(),
-                customer.getNotes(), customer.isArchived(), customer.getCreatedAt(), customer.getUpdatedAt(),
-                customer.getVersion());
+                customer.getNotes(), customer.isArchived(), customer.getCreatedAt(), customer.getUpdatedAt());
     }
 }

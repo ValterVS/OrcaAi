@@ -74,9 +74,9 @@ class CustomerIsolationIntegrationTest {
                         .header("If-Match", "0")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Sequestrado\"}"))
                 .andExpect(status().isNotFound());
-        mvc.perform(post("/api/customers/" + customerOfA + "/archive").with(as(ownerB)).with(csrfToken(mvc)))
+        mvc.perform(post("/api/customers/" + customerOfA + "/archive").with(as(ownerB)).with(csrfToken(mvc)).header("If-Match", "\"0\""))
                 .andExpect(status().isNotFound());
-        mvc.perform(post("/api/customers/" + customerOfA + "/restore").with(as(ownerB)).with(csrfToken(mvc)))
+        mvc.perform(post("/api/customers/" + customerOfA + "/restore").with(as(ownerB)).with(csrfToken(mvc)).header("If-Match", "\"0\""))
                 .andExpect(status().isNotFound());
 
         for (String status : List.of("ACTIVE", "ARCHIVED", "ALL")) {

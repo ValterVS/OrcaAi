@@ -38,10 +38,10 @@ class AccountEmails {
     void send(AccountEmailRequested request) {
         try {
             mailSender.send(compose(request));
-            log.info("Sent {} email to user {}", request.kind(), request.userId());
+            log.info("Sent {} email about {}", request.kind(), request.subjectId());
         } catch (MailException | MessagingException ex) {
-            log.warn("Could not send {} email to user {} ({})",
-                    request.kind(), request.userId(), ex.getClass().getSimpleName());
+            log.warn("Could not send {} email about {} ({})",
+                    request.kind(), request.subjectId(), ex.getClass().getSimpleName());
         }
     }
 
@@ -60,6 +60,14 @@ class AccountEmails {
                     "Redefinir senha",
                     "O link é válido por " + properties.passwordResetTtl().toMinutes()
                             + " minutos. Se você não pediu a redefinição, ignore esta mensagem; sua senha continua a mesma.");
+            case INVITATION -> new Content(
+                    "Você foi convidado para o Orça Aí",
+                    "Você recebeu um convite para participar de " + request.organizationName()
+                            + " no Orça Aí. Para criar seu acesso, acesse o link abaixo.",
+                    properties.link("/accept-invite", request.token()),
+                    "Aceitar convite",
+                    "O convite é válido por " + properties.invitationTtl().toHours()
+                            + " horas. Se você não esperava este convite, ignore esta mensagem.");
             case PASSWORD_CHANGED -> new Content(
                     "Sua senha do Orça Aí foi alterada",
                     "A senha da sua conta foi alterada recentemente.",

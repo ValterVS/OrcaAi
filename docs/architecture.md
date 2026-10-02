@@ -13,6 +13,7 @@ Um único backend Spring Boot, um único banco PostgreSQL. Módulos são pacotes
 | `organizations` | A organização (tenant)                                                 |
 | `users`         | Usuários de uma organização                                            |
 | `customers`     | Clientes da organização (primeiro módulo de negócio)                   |
+| `team`          | Equipe: convites, papéis, desativação e reativação de usuários         |
 
 Módulos futuros (`leads`, `estimates`, `proposals`, `followups`, `projects`, `billing`, `notifications`, `audit`) entram como pacotes irmãos.
 
@@ -106,11 +107,11 @@ Valores opcionais em branco viram `null`. Ficam de fora de propósito: endereço
 | Endpoint | Papéis | Resposta |
 |---|---|---|
 | `GET /api/customers?status=ACTIVE\|ARCHIVED\|ALL&q=&page=&size=` | todos | página |
-| `GET /api/customers/{id}` | todos | cliente |
-| `POST /api/customers` | todos | 201 |
-| `PUT /api/customers/{id}` + `If-Match: "<version>"` | todos | 200; 409 se outra pessoa salvou antes |
-| `POST /api/customers/{id}/archive` | OWNER, ADMIN | 200 |
-| `POST /api/customers/{id}/restore` | OWNER, ADMIN | 200 |
+| `GET /api/customers/{id}` | todos | cliente + `ETag: "<version>"` |
+| `POST /api/customers` | todos | 201 + `ETag` |
+| `PUT /api/customers/{id}` + `If-Match` | todos | 200 + nova `ETag` |
+| `POST /api/customers/{id}/archive` + `If-Match` | OWNER, ADMIN | 200 + nova `ETag` |
+| `POST /api/customers/{id}/restore` + `If-Match` | OWNER, ADMIN | 200 + nova `ETag` |
 
 Não há `DELETE`: clientes são arquivados (`archived_at`) e restaurados, porque serão referenciados por propostas e obras.
 
@@ -120,9 +121,10 @@ Não há `DELETE`: clientes são arquivados (`archived_at`) e restaurados, porqu
 - A busca é um "contém" sem diferenciar maiúsculas em nome, e-mail e telefone, via Specification (JPA Criteria), com parâmetro vinculado e curingas de `LIKE` escapados.
 - Não há índice de texto. Com volume, avaliar `pg_trgm`.
 
-**Concorrência:**
-- A resposta inclui `version`, e a edição exige `If-Match`. Uma versão divergente recebe 409 em vez de sobrescrever a alteração de outra pessoa.
-- Duas gravações simultâneas na mesma versão são resolvidas pelo `@Version` do JPA, que também gera 409.
+**Concorrência (padrão para recursos editáveis, `shared/web/EntityTags`):**
+- A versão viaja no header `ETag` (não no corpo). Edição, arquivamento e restauração exigem `If-Match` com esse valor.
+- Sem `If-Match`: 428. Valor desatualizado: **412 Precondition Failed**, sem sobrescrever a alteração de outra pessoa.
+- Duas gravações simultâneas na mesma versão são resolvidas pelo `@Version` do JPA, que também gera 412.
 
 **Entrada:**
 - Propriedades desconhecidas no JSON (`organizationId`, `archived`, `id`...) são rejeitadas com 400 em toda a API (`spring.jackson.deserialization.fail-on-unknown-properties`). Isso impede mass assignment.
@@ -131,6 +133,24 @@ Não há `DELETE`: clientes são arquivados (`archived_at`) e restaurados, porqu
 - `/app/customers` (lista, busca, filtro, paginação), `/app/customers/new` e `/app/customers/[id]` (detalhe, edição, arquivar/restaurar).
 - As listas e o detalhe são renderizados no servidor a partir da URL (`?status=&q=&page=`). As escritas saem do navegador com CSRF e depois atualizam a página com `router.refresh()`.
 - Os botões de arquivar e restaurar aparecem só para OWNER e ADMIN. Isso é só UX: o backend aplica `@PreAuthorize`.
+
+## 4.2 Equipe (`team`)
+
+| Endpoint | Papéis | Resposta |
+|---|---|---|
+| `GET /api/team/members` | todos | membros da organização (com `version`) |
+| `PUT /api/team/members/{id}/role` + `If-Match` | OWNER | 200 + `ETag`; sessões do alvo revogadas |
+| `POST /api/team/members/{id}/deactivate` + `If-Match` | OWNER, ADMIN (só MEMBER) | 200 + `ETag`; sessões revogadas |
+| `POST /api/team/members/{id}/reactivate` + `If-Match` | OWNER, ADMIN (só MEMBER) | 200 + `ETag` |
+| `GET /api/team/invitations` | OWNER, ADMIN | convites pendentes |
+| `POST /api/team/invitations` (`email`, `role`: ADMIN \| MEMBER) | OWNER, ADMIN | 201 |
+| `POST /api/team/invitations/{id}/resend` | OWNER, ADMIN | 200 |
+| `POST /api/team/invitations/{id}/revoke` | OWNER, ADMIN | 204 |
+| `POST /api/invitations/accept` (`token`, `name`, `password`) | pública, CSRF | 201; sem sessão |
+
+- Não há `DELETE` de usuário.
+- Regras de papel, convites e isolamento estão em [security.md §3.2](security.md#32-equipe-convites-papéis-e-status).
+- **Frontend:** `/app/team` (membros, convite, convites pendentes; as ações mostradas dependem do papel) e `/accept-invite` (token no fragmento, nome, senha e confirmação).
 
 ## 5. Persistência
 

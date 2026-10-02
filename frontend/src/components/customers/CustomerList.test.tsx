@@ -16,7 +16,6 @@ function customer(overrides: Partial<Customer> = {}): Customer {
     archived: false,
     createdAt: "2026-10-02T15:00:00Z",
     updatedAt: "2026-10-02T15:30:00Z",
-    version: 0,
     ...overrides,
   };
 }

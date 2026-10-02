@@ -1,5 +1,6 @@
 package com.orcaai.identity;
 
+import com.orcaai.shared.security.Password;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

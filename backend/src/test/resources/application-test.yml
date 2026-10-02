@@ -10,6 +10,9 @@ orcaai:
   account:
     public-url: http://localhost:3000
     mail-from: nao-responda@orcaai.test
+  team:
+    invitations-per-user-per-hour: 1000
+    invitations-per-organization-per-hour: 1000
   security:
     rate-limit:
       login:

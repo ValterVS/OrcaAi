@@ -1,5 +1,6 @@
 package com.orcaai.identity;
 
+import com.orcaai.shared.security.SecureTokens;
 import static com.orcaai.identity.EmailVerificationIntegrationTest.detail;
 import static com.orcaai.identity.SignupIntegrationTest.uniqueCompany;
 import static com.orcaai.support.AccountApi.PASSWORD;
@@ -120,7 +121,7 @@ class PasswordResetIntegrationTest {
         api.forgotPassword(email);
         String token = mail.awaitToken(email, 2);
         jdbc.update("update password_reset_tokens set expires_at = now() - interval '1 minute' where token_hash = ?",
-                OneTimeTokens.hash(token));
+                SecureTokens.hash(token));
 
         assertThat(detail(api.resetPassword(token, NEW_PASSWORD)))
                 .isEqualTo("Este link de redefinição expirou. Solicite uma nova redefinição.");
