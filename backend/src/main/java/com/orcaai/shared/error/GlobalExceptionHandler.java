@@ -40,6 +40,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.badRequest().body(problem);
     }
 
+    @ExceptionHandler(BusinessException.class)
+    ProblemDetail handleBusiness(BusinessException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     ProblemDetail handleNotFound(ResourceNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, "Recurso não encontrado.");

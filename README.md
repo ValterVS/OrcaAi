@@ -36,7 +36,9 @@ npm install
 npm run dev                                                # http://localhost:3000
 ```
 
-O usuário restrito da aplicação (`APP_DB_USER`) é criado apenas quando o volume do banco é criado. Se você já tinha um volume de uma versão anterior, recrie com `docker compose down -v` (isso apaga os dados locais).
+Abra `http://localhost:3000/signup` para cadastrar uma empresa. O cadastro cria a organização e o usuário OWNER, entra automaticamente e abre o painel em `/app`. Para voltar depois, use `/login`.
+
+O usuário restrito da aplicação (`APP_DB_USER`, membro de `orcaai_runtime`) é criado apenas quando o volume do banco é criado. Volumes criados antes desta versão usam um modelo de privilégios antigo: recrie com `docker compose down -v` (isso apaga os dados locais).
 
 Com `DEV_BOOTSTRAP_EMAIL` e `DEV_BOOTSTRAP_PASSWORD` preenchidos, o profile `dev` cria uma organização e um usuário `OWNER` na primeira inicialização.
 

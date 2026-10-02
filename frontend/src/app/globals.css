@@ -1,3 +1,18 @@
+/* No inline styles anywhere: the production CSP only allows nonce'd or same-origin stylesheets. */
+
+:root {
+  --color-text: #1f2937;
+  --color-muted: #6b7280;
+  --color-border: #d1d5db;
+  --color-surface: #ffffff;
+  --color-background: #f3f4f6;
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
+  --color-error: #b91c1c;
+  --color-success: #166534;
+  --radius: 8px;
+}
+
 *,
 *::before,
 *::after {
@@ -7,12 +22,218 @@
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color: #1f2937;
-  background: #ffffff;
+  color: var(--color-text);
+  background: var(--color-background);
 }
 
-main {
-  max-width: 960px;
-  margin: 0 auto;
+h1 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+.brand {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* Auth pages */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 2rem 1rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 2rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.auth-card .brand {
+  margin: 0 0 1.5rem;
+  font-size: 1.125rem;
+}
+
+.auth-lead {
+  margin: -0.5rem 0 1.5rem;
+  color: var(--color-muted);
+}
+
+.auth-switch {
+  margin: 1.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+/* Forms */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.field input {
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.field input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.field-hint,
+.field-error,
+.form-error {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.field-hint {
+  color: var(--color-muted);
+}
+
+.field-error,
+.form-error {
+  color: var(--color-error);
+}
+
+.form-success {
+  color: var(--color-success);
+}
+
+.form-success p {
+  margin: 0 0 0.5rem;
+}
+
+.button-primary,
+.button-secondary {
+  padding: 0.65rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button-primary {
+  color: #ffffff;
+  background: var(--color-primary);
+  border: none;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.button-secondary {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* Authenticated app */
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.5rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header-brand,
+.app-header-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-header-organization {
+  padding-left: 1rem;
+  border-left: 1px solid var(--color-border);
+  font-weight: 600;
+}
+
+.app-header-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 0.9rem;
+}
+
+.app-header-role {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.logout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.app-main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.empty-state {
+  padding: 2rem;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.empty-state .empty-state-title {
+  margin-bottom: 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text);
 }

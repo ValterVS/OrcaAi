@@ -12,9 +12,11 @@ public interface UserRepository extends Repository<User, UUID> {
 
     User save(User user);
 
+    User saveAndFlush(User user);
+
     Optional<User> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
-    /** For authentication only, before any organization is known. */
+    /** For authentication and sign-up only, before any organization is known. */
     Optional<User> findByEmail(String email);
 
     boolean existsByEmail(String email);

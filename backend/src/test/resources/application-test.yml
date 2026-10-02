@@ -1,11 +1,15 @@
-# The datasource comes from Testcontainers (@ServiceConnection).
+# The datasource and Flyway users come from TestcontainersConfiguration.
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/testmigration
 
 orcaai:
   security:
-    login-rate-limit:
-      max-attempts-per-address: 1000
-      max-failures-per-account: 1000
-      window: 1m
+    rate-limit:
+      login:
+        max-attempts-per-address: 1000
+        max-failures-per-address-and-account: 1000
+        window: 1m
+      signup:
+        max-attempts-per-address: 1000
+        window: 1m

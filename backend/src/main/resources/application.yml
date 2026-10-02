@@ -53,7 +53,11 @@ management:
 
 orcaai:
   security:
-    login-rate-limit:
-      max-attempts-per-address: 30
-      max-failures-per-account: 5
-      window: 15m
+    rate-limit:
+      login:
+        max-attempts-per-address: 30
+        max-failures-per-address-and-account: 5
+        window: 15m
+      signup:
+        max-attempts-per-address: 5
+        window: 1h

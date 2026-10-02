@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DataAccessException;
 
 /**
  * Tenant B knows the exact id of tenant A's row and still cannot read or change it.
@@ -107,7 +107,7 @@ class TenantIsolationIntegrationTest {
 
         assertThat(visible).isEmpty();
         assertThatThrownBy(() -> tenant.anonymous(() -> probes.saveAndFlush(new TenancyProbe("orphan"))))
-                .isInstanceOf(DataIntegrityViolationException.class);
+                .isInstanceOf(DataAccessException.class);
     }
 
     private String labelSeenByA() {

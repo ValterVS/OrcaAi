@@ -14,36 +14,57 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
-class LoginRateLimitFilterTest {
+class AuthRateLimitFilterTest {
 
     private final HandlerExceptionResolver resolver = mock(HandlerExceptionResolver.class);
-    private final LoginRateLimitFilter filter =
-            new LoginRateLimitFilter(new LoginRateLimitProperties(5, 2, Duration.ofMinutes(1)), resolver);
+    private final AuthRateLimitFilter filter = new AuthRateLimitFilter(
+            new AuthRateLimitProperties(
+                    new AuthRateLimitProperties.Login(6, 2, Duration.ofMinutes(1)),
+                    new AuthRateLimitProperties.Signup(2, Duration.ofMinutes(1))),
+            resolver);
 
     @Test
-    void limitsAttemptsPerAddress() throws Exception {
-        for (int i = 0; i < 5; i++) {
-            assertThat(attempt("10.0.0.1", "user" + i + "@example.com", 204)).isTrue();
+    void limitsAllLoginAttemptsFromOneAddress() throws Exception {
+        for (int i = 0; i < 6; i++) {
+            assertThat(login("10.0.0.1", "user" + i + "@example.com", 204)).isTrue();
         }
 
-        assertThat(attempt("10.0.0.1", "other@example.com", 204)).isFalse();
-        assertThat(attempt("10.0.0.2", "other@example.com", 204)).isTrue();
+        assertThat(login("10.0.0.1", "another@example.com", 204)).isFalse();
+        assertThat(login("10.0.0.2", "another@example.com", 204)).isTrue();
     }
 
     @Test
-    void limitsFailuresPerAccountAcrossAddresses() throws Exception {
-        assertThat(attempt("10.0.0.1", "victim@example.com", 401)).isTrue();
-        assertThat(attempt("10.0.0.2", " Victim@Example.com ", 401)).isTrue();
+    void limitsFailuresForSameAccountFromSameAddress() throws Exception {
+        assertThat(login("10.0.0.1", "victim@example.com", 401)).isTrue();
+        assertThat(login("10.0.0.1", " Victim@Example.com ", 401)).isTrue();
 
-        assertThat(attempt("10.0.0.3", "victim@example.com", 204)).isFalse();
-        assertThat(attempt("10.0.0.3", "someone-else@example.com", 204)).isTrue();
+        assertThat(login("10.0.0.1", "victim@example.com", 204)).isFalse();
+        assertThat(login("10.0.0.1", "someone-else@example.com", 204)).isTrue();
     }
 
     @Test
-    void successfulAttemptsDoNotCountAgainstAccount() throws Exception {
-        for (int i = 0; i < 3; i++) {
-            assertThat(attempt("10.0.0." + i, "user@example.com", 204)).isTrue();
+    void failuresFromOtherAddressesDoNotLockTheAccountOut() throws Exception {
+        assertThat(login("10.0.0.66", "victim@example.com", 401)).isTrue();
+        assertThat(login("10.0.0.66", "victim@example.com", 401)).isTrue();
+        assertThat(login("10.0.0.66", "victim@example.com", 204)).isFalse();
+
+        assertThat(login("10.0.0.7", "victim@example.com", 204)).isTrue();
+    }
+
+    @Test
+    void successfulLoginsDoNotCountAsFailures() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            assertThat(login("10.0.0.1", "user@example.com", 204)).isTrue();
         }
+    }
+
+    @Test
+    void limitsSignupsPerAddress() throws Exception {
+        assertThat(signup("10.0.0.1")).isTrue();
+        assertThat(signup("10.0.0.1")).isTrue();
+
+        assertThat(signup("10.0.0.1")).isFalse();
+        assertThat(signup("10.0.0.2")).isTrue();
     }
 
     @Test
@@ -56,18 +77,25 @@ class LoginRateLimitFilterTest {
         verify(resolver, never()).resolveException(any(), any(), any(), any());
     }
 
-    /** Returns whether the request reached the login handler, which answers with {@code status}. */
-    private boolean attempt(String address, String email, int status) throws Exception {
+    private boolean login(String address, String email, int status) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/login");
-        request.setRemoteAddr(address);
         request.setParameter("email", email);
-        MockHttpServletResponse response = new MockHttpServletResponse();
+        return reachesHandler(request, address, status);
+    }
+
+    private boolean signup(String address) throws Exception {
+        return reachesHandler(new MockHttpServletRequest("POST", "/api/auth/signup"), address, 201);
+    }
+
+    /** Returns whether the request got past the filter; the handler then answers with {@code status}. */
+    private boolean reachesHandler(MockHttpServletRequest request, String address, int status) throws Exception {
+        request.setRemoteAddr(address);
         boolean[] reached = {false};
         FilterChain chain = (req, res) -> {
             reached[0] = true;
             ((HttpServletResponse) res).setStatus(status);
         };
-        filter.doFilter(request, response, chain);
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
         return reached[0];
     }
 }

@@ -21,6 +21,9 @@ public class User extends BaseEntity {
     @Column(name = "organization_id", nullable = false, updatable = false)
     private UUID organizationId;
 
+    @Column(nullable = false, length = 120)
+    private String name;
+
     @Column(nullable = false, unique = true, length = 254)
     private String email;
 
@@ -32,25 +35,31 @@ public class User extends BaseEntity {
     private Role role;
 
     @Column(nullable = false)
-    private boolean enabled;
+    private boolean active;
 
     protected User() {
     }
 
-    public User(UUID organizationId, String email, String passwordHash, Role role) {
+    public User(UUID organizationId, String name, String email, String passwordHash, Role role) {
         this.organizationId = organizationId;
+        this.name = name;
         this.email = normalizeEmail(email);
         this.passwordHash = passwordHash;
         this.role = role;
-        this.enabled = true;
+        this.active = true;
     }
 
+    /** Only trim and lowercase; provider-specific rewriting (dots, aliases) is deliberately not applied. */
     public static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 
     public UUID getOrganizationId() {
         return organizationId;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public String getEmail() {
@@ -65,7 +74,7 @@ public class User extends BaseEntity {
         return role;
     }
 
-    public boolean isEnabled() {
-        return enabled;
+    public boolean isActive() {
+        return active;
     }
 }

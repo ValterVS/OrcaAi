@@ -28,6 +28,6 @@ public class TestData {
 
     public User user(Organization organization, String password, Role role) {
         String email = "user-" + UUID.randomUUID() + "@example.com";
-        return users.save(new User(organization.getId(), email, passwordEncoder.encode(password), role));
+        return users.save(new User(organization.getId(), "Pessoa de Teste", email, passwordEncoder.encode(password), role));
     }
 }

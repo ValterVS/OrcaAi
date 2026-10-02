@@ -16,9 +16,9 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Exercises the RLS policy on tenancy_probes with plain SQL, i.e. without Hibernate's filter.
- * Each block switches to a non-owner role with {@code SET LOCAL ROLE}; the organization comes from
- * {@link TenantTransactionManager}.
+ * Exercises the RLS policy on tenancy_probes with plain SQL, i.e. without Hibernate's filter. The
+ * application connects as the restricted runtime user, so the policy applies; the organization
+ * comes from {@link TenantTransactionManager}.
  */
 @IntegrationTest
 class RowLevelSecurityIntegrationTest {
@@ -57,24 +57,18 @@ class RowLevelSecurityIntegrationTest {
 
     @Test
     void unfilteredSqlOnlySeesCurrentOrganizationRows() {
-        List<UUID> visibleToB = tenant.as(orgB, () -> {
-            useRestrictedRole();
-            return jdbc.queryForList("select organization_id from tenancy_probes", UUID.class);
-        });
+        List<UUID> visibleToB = tenant.as(orgB, () ->
+                jdbc.queryForList("select organization_id from tenancy_probes", UUID.class));
 
         assertThat(visibleToB).isNotEmpty().containsOnly(orgB.getId());
     }
 
     @Test
     void unfilteredSqlCannotModifyOtherOrganizationRows() {
-        int updated = tenant.as(orgB, () -> {
-            useRestrictedRole();
-            return jdbc.update("update tenancy_probes set label = 'hijacked' where id = ?", probeOfA);
-        });
-        int deleted = tenant.as(orgB, () -> {
-            useRestrictedRole();
-            return jdbc.update("delete from tenancy_probes where id = ?", probeOfA);
-        });
+        int updated = tenant.as(orgB, () ->
+                jdbc.update("update tenancy_probes set label = 'hijacked' where id = ?", probeOfA));
+        int deleted = tenant.as(orgB, () ->
+                jdbc.update("delete from tenancy_probes where id = ?", probeOfA));
 
         assertThat(updated).isZero();
         assertThat(deleted).isZero();
@@ -83,29 +77,17 @@ class RowLevelSecurityIntegrationTest {
 
     @Test
     void canInsertOnlyForCurrentOrganization() {
-        tenant.run(orgB, () -> {
-            useRestrictedRole();
-            insertProbeFor(orgB);
-        });
+        tenant.run(orgB, () -> insertProbeFor(orgB));
 
-        assertThatThrownBy(() -> tenant.run(orgB, () -> {
-            useRestrictedRole();
-            insertProbeFor(orgA);
-        })).isInstanceOf(DataAccessException.class).rootCause().hasMessageContaining("row-level security");
-    }
-
-    private void insertProbeFor(Organization organization) {
-        jdbc.update("""
-                insert into tenancy_probes (id, organization_id, label, created_at, updated_at)
-                values (gen_random_uuid(), ?, 'direct', now(), now())""", organization.getId());
+        assertThatThrownBy(() -> tenant.run(orgB, () -> insertProbeFor(orgA)))
+                .isInstanceOf(DataAccessException.class)
+                .rootCause().hasMessageContaining("row-level security");
     }
 
     @Test
     void withoutOrganizationNothingIsVisible() {
-        Integer count = tenant.anonymous(() -> {
-            useRestrictedRole();
-            return jdbc.queryForObject("select count(*) from tenancy_probes", Integer.class);
-        });
+        Integer count = tenant.anonymous(() ->
+                jdbc.queryForObject("select count(*) from tenancy_probes", Integer.class));
 
         assertThat(count).isZero();
     }
@@ -123,7 +105,9 @@ class RowLevelSecurityIntegrationTest {
         assertThat((String) reused.get("setting")).isNullOrEmpty();
     }
 
-    private void useRestrictedRole() {
-        jdbc.execute("set local role rls_probe_app");
+    private void insertProbeFor(Organization organization) {
+        jdbc.update("""
+                insert into tenancy_probes (id, organization_id, label, created_at, updated_at)
+                values (gen_random_uuid(), ?, 'direct', now(), now())""", organization.getId());
     }
 }

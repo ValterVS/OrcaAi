@@ -1,8 +1,6 @@
+import { redirect } from "next/navigation";
+
+// /app sends visitors without a session to /login.
 export default function HomePage() {
-  return (
-    <main>
-      <h1>Orça Aí</h1>
-      <p>Em construção.</p>
-    </main>
-  );
+  redirect("/app");
 }

@@ -55,7 +55,7 @@ class DevBootstrap implements ApplicationRunner {
             return;
         }
         Organization organization = organizations.save(new Organization("Organização de desenvolvimento"));
-        users.save(new User(organization.getId(), email, passwordEncoder.encode(password), Role.OWNER));
+        users.save(new User(organization.getId(), "Responsável", email, passwordEncoder.encode(password), Role.OWNER));
         log.info("Created development organization and owner user");
     }
 }

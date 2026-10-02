@@ -98,11 +98,14 @@ class AuthenticationIntegrationTest {
 
         mvc.perform(get("/api/auth/me").cookie(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(user.getId().toString()))
+                .andExpect(jsonPath("$.userId").value(user.getId().toString()))
+                .andExpect(jsonPath("$.userName").value(user.getName()))
                 .andExpect(jsonPath("$.organizationId").value(organization.getId().toString()))
-                .andExpect(jsonPath("$.email").value(user.getEmail()))
+                .andExpect(jsonPath("$.organizationName").value(organization.getName()))
                 .andExpect(jsonPath("$.role").value("ADMIN"))
-                .andExpect(jsonPath("$.passwordHash").doesNotExist());
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andExpect(jsonPath("$.email").doesNotExist())
+                .andExpect(jsonPath("$.authorities").doesNotExist());
     }
 
     @Test
@@ -111,7 +114,9 @@ class AuthenticationIntegrationTest {
                 .andReturn().getResponse().getCookie("SESSION");
 
         mvc.perform(post("/api/auth/logout").cookie(session).with(csrfToken(mvc)))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge("XSRF-TOKEN", 0))
+                .andExpect(cookie().maxAge("SESSION", 0));
         mvc.perform(get("/api/auth/me").cookie(session))
                 .andExpect(status().isUnauthorized());
     }

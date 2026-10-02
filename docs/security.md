@@ -31,6 +31,21 @@ O isolamento de usuários fica em `UserRepository`, que propositalmente **não**
 - busca por ID somente via `findByIdAndOrganizationId(id, TenantContext.requireOrganizationId())`;
 - `findByEmail` existe apenas para autenticação.
 
+### Cadastro (signup) e tenancy
+
+O cadastro é a única operação que cria dados sem usuário autenticado. Ele **não** enfraquece o mecanismo de tenancy:
+- grava apenas `organizations` e `users`, que não são filtradas por tenant;
+- a organização do novo OWNER é a linha recém-criada, nunca um valor da requisição. `organizationId`, `role` e `id` enviados pelo cliente são ignorados;
+- organização e OWNER são criados na mesma transação: se o usuário falha, a organização é desfeita;
+- se no futuro o cadastro precisar criar dados de tenant (ex.: configurações iniciais), isso deve ocorrer num passo explícito, com o contexto da nova organização definido pelo backend, nunca por um endpoint genérico de seleção de tenant.
+
+### E-mail e senha
+
+- **E-mail:** normalizado só com trim + lowercase (sem regras de provedor, pontos e `+` preservados). Unicidade garantida pelo banco (`users_email_uk`) e formato normalizado garantido por `CHECK (email = lower(btrim(email)))`. No cadastro concorrente, a constraint é o árbitro final.
+- **Senha:** 12 a 64 caracteres, sem regras de composição. Senhas longas e frases são incentivadas. O limite superior inclui no máximo 72 bytes em UTF-8, porque o BCrypt ignora o excedente; rejeitar é melhor que truncar em silêncio. O hash continua com o `DelegatingPasswordEncoder` (`{bcrypt}`), o que permite migrar para Argon2 sem invalidar senhas.
+- A senha nunca é logada, retornada ou incluída em exceções (`SignupRequest.toString` a omite). O hash é calculado antes de checar o e-mail, para que o tempo de resposta não revele se o e-mail já existe.
+- **Enumeração:** e-mail já cadastrado gera a resposta genérica "Não foi possível criar a conta com os dados informados." (422). Isso não elimina totalmente a enumeração: um cadastro que falha com dados válidos ainda sugere que o e-mail existe. A proteção completa virá com a verificação de e-mail (resposta sempre "verifique seu e-mail"), antes da exposição pública. Até lá, o limite de cadastros por IP reduz o abuso.
+
 Riscos a tratar ao criar a gestão de usuários:
 - **Escalada de privilégio:** ADMIN não pode promover ninguém a OWNER nem alterar OWNER. Impedir a remoção do último OWNER.
 - **Sessões:** mudanças de papel, status, senha ou e-mail devem revogar sessões (seção 4).
@@ -57,15 +72,19 @@ Pendência explícita: quando a gestão de usuários existir, cada operação ac
 
 Alternativa descartada por enquanto: revalidar o usuário no banco a cada requisição. É mais robusta contra esquecimento, mas custa uma consulta por requisição. Reavaliar se o número de pontos que alteram usuários crescer.
 
-## 5. Rate limiting de login
+## 5. Rate limiting de login e cadastro
 
-Em memória (Caffeine), por instância, janela fixa:
-- **por endereço:** toda tentativa conta (padrão: 30 / 15 min);
-- **por conta (e-mail normalizado):** só falhas contam (padrão: 5 / 15 min).
+Em memória (Caffeine), por instância, janela fixa (`AuthRateLimitFilter`):
 
-A chave por conta não depende de o e-mail existir: a resposta 429 é idêntica para contas existentes e inexistentes.
+| Endpoint | Chave | O que conta | Padrão |
+|---|---|---|---|
+| Login | IP | toda tentativa | 30 / 15 min |
+| Login | IP + e-mail normalizado | só falhas (401) | 5 / 15 min |
+| Cadastro | IP | toda tentativa | 5 / 1 h |
 
-Trade-off aceito: um atacante pode bloquear temporariamente o login de uma vítima. Evoluções: CAPTCHA após falhas, MFA e um store compartilhado (Redis) quando houver mais de uma instância.
+- **Não existe limite pelo e-mail sozinho.** Ele permitiria a qualquer pessoa bloquear o login de uma vítima errando a senha de propósito. Falhas vindas de um IP não afetam a vítima em outro IP (coberto por `AuthRateLimitIntegrationTest`).
+- As chaves não dependem de a conta existir: conta existente e inexistente produzem exatamente a mesma sequência de respostas (401 e depois 429, com corpo idêntico).
+- **Risco aceito:** um ataque distribuído contra uma única conta (muitos IPs) só é contido pelo limite de cada IP. Evoluções: MFA, CAPTCHA após falhas, monitoramento de falhas por conta (alerta, não bloqueio) e store compartilhado (Redis) com mais de uma instância.
 
 ## 6. Proxy e cabeçalhos encaminhados (produção)
 
@@ -131,7 +150,7 @@ CREATE POLICY tenant_isolation ON <tabela>
 | Migrations de dados em tabelas com RLS | Com `FORCE`, o dono também é filtrado: definir `set_config` por organização no script ou usar um papel de manutenção com `BYPASSRLS`, explícito e revisado |
 | Jobs assíncronos | Contexto de organização explícito antes da transação; sem ele, não veem nada |
 | Consultas administrativas legítimas (suporte, relatórios globais) | Papel separado com `BYPASSRLS`, fora da aplicação, com acesso auditado. Nunca relaxar a política da aplicação |
-| `users`, `organizations`, `spring_session*` | Sem RLS: lidos antes de existir tenant (login) ou não são dados de tenant |
+| `users`, `organizations`, `spring_session*` | Sem RLS (exceção documentada). `users` é lida por e-mail no login e escrita no cadastro, antes de existir tenant; `organizations` é a própria raiz do tenant, criada no cadastro; `spring_session*` não são dados de tenant. Colocar RLS nelas exigiria um modo "sem tenant" que falharia aberto. O isolamento de `users` fica em `UserRepository` (§3) |
 
 ### Decisão
 
@@ -141,29 +160,37 @@ CREATE POLICY tenant_isolation ON <tabela>
 
 ## 8. Usuários do banco em produção
 
-Dois usuários, ambos sem superusuário:
+Três papéis, nenhum superusuário:
+
+| Papel | Login | Função |
+|---|---|---|
+| `orcaai_owner` | sim | Dono do schema; executa o Flyway. Usado só em deploy |
+| `orcaai_runtime` | não | Grupo que recebe os privilégios de tabela. **Nome fixo, referenciado pelas migrations** |
+| `orcaai_app` (qualquer nome) | sim | Usuário da aplicação, membro de `orcaai_runtime` |
 
 ```sql
--- Executado uma vez por um administrador. Senhas vêm do secret manager, nunca do repositório.
-CREATE ROLE orcaai_owner LOGIN PASSWORD '<secret>' NOSUPERUSER NOCREATEROLE NOBYPASSRLS;
-CREATE ROLE orcaai_app   LOGIN PASSWORD '<secret>' NOSUPERUSER NOCREATEROLE NOBYPASSRLS;
+-- Provisionamento, uma vez, por um administrador. Senhas vêm do secret manager, nunca do repositório.
+CREATE ROLE orcaai_owner   LOGIN PASSWORD '<secret>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+CREATE ROLE orcaai_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+CREATE ROLE orcaai_app     LOGIN PASSWORD '<secret>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
+    IN ROLE orcaai_runtime;
 
 ALTER SCHEMA public OWNER TO orcaai_owner;
-GRANT USAGE ON SCHEMA public TO orcaai_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE orcaai_owner IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO orcaai_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE orcaai_owner IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO orcaai_app;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO orcaai_runtime;
 ```
+
+- **Sem `ALTER DEFAULT PRIVILEGES`:** nenhuma tabela nova fica acessível implicitamente, e `flyway_schema_history` nunca é concedida ao runtime.
+- **Regra:** toda migration que cria tabela concede explicitamente a `orcaai_runtime` só as operações necessárias (ex.: `V3__grant_runtime_privileges.sql`). Hoje `users` e `organizations` não têm `DELETE`.
+- O runtime não é dono de nada, não tem `CREATE` no schema, não altera tabelas, não cria políticas e não toca o histórico do Flyway (`DatabasePrivilegesIntegrationTest`).
+- **Os testes reproduzem exatamente esse modelo:** o container cria os três papéis (`db/test-database-roles.sql`), o Flyway roda como `orcaai_owner` e a aplicação como `orcaai_app`. Uma migration que esqueça um `GRANT` quebra os testes.
 
 | Variável | Usuário |
 |---|---|
 | `SPRING_FLYWAY_USER` / `SPRING_FLYWAY_PASSWORD` | `orcaai_owner` (migrations) |
 | `DB_USERNAME` / `DB_PASSWORD` | `orcaai_app` (runtime) |
 
-O ambiente local reproduz essa separação: `infra/postgres/init/01-app-user.sh` cria `APP_DB_USER` no primeiro `docker compose up`. Foi verificado que esse usuário não cria tabelas, não faz `DROP` e não desativa RLS.
-
-Pendência menor: os privilégios padrão também dão DML em `flyway_schema_history` ao usuário da aplicação. Revogar isso em produção após a primeira migration.
+**Ambiente local:** `infra/postgres/init/01-app-user.sh` cria `orcaai_runtime` e `APP_DB_USER` quando o volume é criado. O Flyway roda como `POSTGRES_USER` (superusuário da imagem Docker, aceitável só em dev). Volumes criados antes desta versão usam o modelo antigo (default privileges) e devem ser recriados com `docker compose down -v`.
 
 ## 9. Content Security Policy (frontend)
 

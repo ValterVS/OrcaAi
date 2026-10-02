@@ -9,7 +9,7 @@ Um único backend Spring Boot, um único banco PostgreSQL. Módulos são pacotes
 | Pacote          | Responsabilidade                                                       |
 |-----------------|------------------------------------------------------------------------|
 | `shared`        | Transversal: erros, segurança, tenancy, base de persistência           |
-| `identity`      | Login, sessão, usuário autenticado, revogação de sessões               |
+| `identity`      | Cadastro da empresa, login, sessão, conta atual, revogação de sessões  |
 | `organizations` | A organização (tenant)                                                 |
 | `users`         | Usuários de uma organização                                            |
 
@@ -39,7 +39,18 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
 - **Sessão no servidor**, não JWT. A sessão fica no PostgreSQL (Spring Session JDBC), então sobrevive a deploys, funciona com múltiplas instâncias e pode ser revogada.
 - Cookie `SESSION`: `HttpOnly`, `Secure` (desligado só no profile `dev`), `SameSite=Lax`, timeout de 8h de inatividade.
 - **CSRF**: double-submit. `GET /api/auth/csrf` emite o cookie `XSRF-TOKEN` (legível por JS); requisições que alteram estado enviam o valor no header `X-XSRF-TOKEN`. O token é rotacionado no login.
-- Login: `POST /api/auth/login` (form `email`, `password`) → 204. Logout: `POST /api/auth/logout` → 204. Usuário atual: `GET /api/auth/me`.
+- Endpoints:
+
+  | Endpoint | Autenticação | Resposta |
+  |---|---|---|
+  | `GET /api/auth/csrf` | pública | 204 + cookie `XSRF-TOKEN` |
+  | `POST /api/auth/signup` (JSON `companyName`, `ownerName`, `email`, `password`) | pública, CSRF | 201; cria organização + OWNER atomicamente |
+  | `POST /api/auth/login` (form `email`, `password`) | pública, CSRF | 204 + cookie `SESSION`; token CSRF rotacionado |
+  | `GET /api/auth/me` | sessão | `userId`, `userName`, `role`, `organizationId`, `organizationName` |
+  | `POST /api/auth/logout` | CSRF | 204; sessão invalidada, cookies `SESSION` e `XSRF-TOKEN` expirados |
+
+- **Bootstrap de CSRF:** antes de cadastro, login e logout, o frontend chama `GET /api/auth/csrf` (`src/lib/api/auth.ts`) e reenvia o cookie no header. O CSRF nunca é desativado para endpoints de autenticação.
+- `/me` relê usuário e organização do banco a cada chamada; usuário inativo ou removido recebe 401 mesmo com sessão ainda existente.
 - Toda falha de login retorna a mesma resposta (e-mail inexistente, senha errada, conta desativada).
 - Senhas: `DelegatingPasswordEncoder` (BCrypt por padrão, com prefixo de algoritmo para permitir migração futura).
 - Autorização: papéis `OWNER`, `ADMIN`, `MEMBER` como `ROLE_*`; `@EnableMethodSecurity` ativo (`@PreAuthorize`). Tudo é autenticado por padrão; exceções públicas são explícitas em `SecurityConfig`.
@@ -52,7 +63,15 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
 - O navegador fala apenas com a origem do frontend. `/api/*` chega ao backend pelo `rewrites` do Next.js em dev; em produção, um reverse proxy roteia `/api/*` direto ao backend.
 - Sem CORS, cookies first-party.
 - JSON; erros no formato RFC 9457 (`application/problem+json`) com `status`, `title`, `detail` e, em validação, `errors[{field, message}]`.
-- O cliente `src/lib/api/client.ts` é para uso no navegador. Chamadas a partir de Server Components precisarão repassar cookies explicitamente (ainda não implementado).
+- **Navegador:** `src/lib/api/client.ts` chama `/api/*` na mesma origem. O cookie de sessão é `HttpOnly` e o JavaScript nunca o lê. Nada de autenticação fica em `localStorage`.
+- **Servidor (Server Components):** `src/lib/api/server.ts` chama `BACKEND_URL` diretamente, repassando apenas o cookie `SESSION`. `BACKEND_URL` não tem prefixo `NEXT_PUBLIC_` e não chega ao navegador. Atenção: o `rewrites` do Next lê `BACKEND_URL` **no build**; o fetch do servidor lê em runtime.
+- **Rotas:**
+  - `/app/*`: o layout consulta `/api/auth/me` e redireciona para `/login` sem sessão;
+  - `/login` e `/signup` (grupo `(auth)`): redirecionam para `/app` se já houver sessão. Se o backend estiver fora do ar, mostram o formulário, sem loop de redirect;
+  - `/`: redireciona para `/app`.
+
+  Isso é navegação, não autorização: o backend valida a sessão em toda chamada.
+- Após o cadastro, o frontend faz login com as mesmas credenciais (mantidas só em memória) e abre `/app`.
 - CSP com nonce por requisição; todas as páginas são renderizadas dinamicamente ([security.md §9](security.md#9-content-security-policy-frontend)).
 
 ## 5. Persistência
@@ -61,7 +80,7 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
 - IDs: UUID v7 gerado pela aplicação, com boa localidade de índice; embute o instante de criação. **IDs não são segredo nem mecanismo de autorização.**
 - `BaseEntity` traz `version` (lock otimista), `created_at` e `updated_at` (`timestamptz`, UTC).
 - `open-in-view` desligado: acesso a dados acontece em serviços transacionais.
-- Dois usuários de banco: dono do schema (Flyway) e usuário de runtime só com DML, sem superusuário e sem `BYPASSRLS` ([security.md §8](security.md#8-usuários-do-banco-em-produção)). O ambiente local reproduz essa separação.
+- Banco: dono do schema (Flyway), grupo `orcaai_runtime` com privilégios concedidos tabela a tabela pelas migrations, e usuário da aplicação membro desse grupo, sem superusuário e sem `BYPASSRLS` ([security.md §8](security.md#8-usuários-do-banco-em-produção)). Dev e testes reproduzem essa separação.
 
 ## 6. Erros e validação
 

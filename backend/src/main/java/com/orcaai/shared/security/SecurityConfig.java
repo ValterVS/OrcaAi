@@ -3,6 +3,7 @@ package com.orcaai.shared.security;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,16 +27,18 @@ class SecurityConfig {
 
     static final String LOGIN_PATH = "/api/auth/login";
     static final String LOGOUT_PATH = "/api/auth/logout";
+    static final String SIGNUP_PATH = "/api/auth/signup";
 
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             SecurityProblemHandler problemHandler,
-            LoginRateLimitProperties rateLimitProperties,
+            AuthRateLimitProperties rateLimitProperties,
             @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
         http
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/csrf").permitAll()
+                        .requestMatchers(HttpMethod.POST, SIGNUP_PATH).permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
@@ -59,7 +62,7 @@ class SecurityConfig {
                 .headers(headers -> headers
                         .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'")))
                 .addFilterBefore(
-                        new LoginRateLimitFilter(rateLimitProperties, resolver),
+                        new AuthRateLimitFilter(rateLimitProperties, resolver),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

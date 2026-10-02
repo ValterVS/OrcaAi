@@ -27,7 +27,7 @@ class DatabaseUserDetailsService implements UserDetailsService {
                         user.getEmail(),
                         user.getPasswordHash(),
                         user.getRole(),
-                        user.isEnabled()))
+                        user.isActive()))
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }
 }
