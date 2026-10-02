@@ -5,10 +5,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AccountStatusUserDetailsChecker;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
@@ -28,6 +31,10 @@ class SecurityConfig {
     static final String LOGIN_PATH = "/api/auth/login";
     static final String LOGOUT_PATH = "/api/auth/logout";
     static final String SIGNUP_PATH = "/api/auth/signup";
+    static final String RESEND_VERIFICATION_PATH = "/api/auth/resend-verification";
+    static final String FORGOT_PASSWORD_PATH = "/api/auth/forgot-password";
+    static final String VERIFY_EMAIL_PATH = "/api/auth/verify-email";
+    static final String RESET_PASSWORD_PATH = "/api/auth/reset-password";
 
     @Bean
     SecurityFilterChain securityFilterChain(
@@ -38,7 +45,8 @@ class SecurityConfig {
         http
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/csrf").permitAll()
-                        .requestMatchers(HttpMethod.POST, SIGNUP_PATH).permitAll()
+                        .requestMatchers(HttpMethod.POST, SIGNUP_PATH, RESEND_VERIFICATION_PATH, FORGOT_PASSWORD_PATH,
+                                VERIFY_EMAIL_PATH, RESET_PASSWORD_PATH).permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
@@ -65,6 +73,20 @@ class SecurityConfig {
                         new AuthRateLimitFilter(rateLimitProperties, resolver),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * Account status (disabled, unverified) is checked only after the password, so those accounts take
+     * the same time and get the same response as a wrong password: login cannot reveal account state.
+     */
+    @Bean
+    DaoAuthenticationProvider authenticationProvider(UserDetailsService users, PasswordEncoder passwordEncoder) {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(users);
+        provider.setPasswordEncoder(passwordEncoder);
+        provider.setPreAuthenticationChecks(user -> {
+        });
+        provider.setPostAuthenticationChecks(new AccountStatusUserDetailsChecker());
+        return provider;
     }
 
     @Bean

@@ -73,6 +73,12 @@ class DatabasePrivilegesIntegrationTest {
         assertThat(privilege("users", "TRUNCATE")).isFalse();
         assertThat(privilege("users", "UPDATE")).isTrue();
         assertThat(privilege("spring_session", "DELETE")).isTrue();
+        for (String table : List.of("email_verification_tokens", "password_reset_tokens")) {
+            assertThat(privilege(table, "SELECT")).as(table).isTrue();
+            assertThat(privilege(table, "UPDATE")).as(table).isTrue();
+            assertThat(privilege(table, "DELETE")).as(table).isFalse();
+            assertThat(privilege(table, "TRUNCATE")).as(table).isFalse();
+        }
     }
 
     @Test

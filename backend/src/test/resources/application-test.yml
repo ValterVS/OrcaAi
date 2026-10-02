@@ -2,8 +2,14 @@
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/testmigration
+  mail:
+    # Replaced by RecordingMailSender; nothing connects to it.
+    host: localhost
 
 orcaai:
+  account:
+    public-url: http://localhost:3000
+    mail-from: nao-responda@orcaai.test
   security:
     rate-limit:
       login:
@@ -11,5 +17,11 @@ orcaai:
         max-failures-per-address-and-account: 1000
         window: 1m
       signup:
+        max-attempts-per-address: 1000
+        window: 1m
+      email-requests:
+        max-attempts-per-address: 1000
+        window: 1m
+      token-submissions:
         max-attempts-per-address: 1000
         window: 1m

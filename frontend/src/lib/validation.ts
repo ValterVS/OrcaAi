@@ -62,3 +62,18 @@ export function validateLogin(data: { email: string; password: string }): FieldE
 export function hasErrors(errors: FieldErrors): boolean {
   return Object.keys(errors).length > 0;
 }
+
+export function validateEmailRequest(data: { email: string }): FieldErrors {
+  const emailError = validateEmail(data.email);
+  return emailError ? { email: emailError } : {};
+}
+
+export function validateNewPassword(data: { password: string; confirmation: string }): FieldErrors {
+  if (!isValidPassword(data.password)) {
+    return { password: PASSWORD_RULE };
+  }
+  if (data.password !== data.confirmation) {
+    return { confirmation: "As senhas não conferem." };
+  }
+  return {};
+}

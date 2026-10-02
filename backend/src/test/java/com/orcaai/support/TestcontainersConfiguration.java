@@ -8,7 +8,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /**
  * One PostgreSQL container shared by every test context. Flyway runs as the schema owner and the
  * application as the restricted runtime user, as in production, so a migration that forgets to
- * grant a privilege fails the tests.
+ * grant a privilege fails the tests. Emails are recorded in memory ({@link RecordingMailSender}).
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
@@ -18,6 +18,11 @@ public class TestcontainersConfiguration {
 
     static {
         POSTGRES.start();
+    }
+
+    @Bean
+    RecordingMailSender mailSender() {
+        return new RecordingMailSender();
     }
 
     @Bean

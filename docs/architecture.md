@@ -44,13 +44,18 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
   | Endpoint | Autenticação | Resposta |
   |---|---|---|
   | `GET /api/auth/csrf` | pública | 204 + cookie `XSRF-TOKEN` |
-  | `POST /api/auth/signup` (JSON `companyName`, `ownerName`, `email`, `password`) | pública, CSRF | 201; cria organização + OWNER atomicamente |
+  | `POST /api/auth/signup` (JSON `companyName`, `ownerName`, `email`, `password`) | pública, CSRF | 202 + mensagem genérica, exista ou não o e-mail; conta nova fica pendente de verificação |
+  | `POST /api/auth/resend-verification` (JSON `email`) | pública, CSRF | 202 + mensagem genérica |
+  | `POST /api/auth/verify-email` (JSON `token`) | pública, CSRF | 204; 422 com motivo (inválido, expirado, já usado) |
+  | `POST /api/auth/forgot-password` (JSON `email`) | pública, CSRF | 202 + mensagem genérica |
+  | `POST /api/auth/reset-password` (JSON `token`, `password`) | pública, CSRF | 204; revoga sessões, sem login automático |
   | `POST /api/auth/login` (form `email`, `password`) | pública, CSRF | 204 + cookie `SESSION`; token CSRF rotacionado |
   | `GET /api/auth/me` | sessão | `userId`, `userName`, `role`, `organizationId`, `organizationName` |
   | `POST /api/auth/logout` | CSRF | 204; sessão invalidada, cookies `SESSION` e `XSRF-TOKEN` expirados |
 
-- **Bootstrap de CSRF:** antes de cadastro, login e logout, o frontend chama `GET /api/auth/csrf` (`src/lib/api/auth.ts`) e reenvia o cookie no header. O CSRF nunca é desativado para endpoints de autenticação.
-- `/me` relê usuário e organização do banco a cada chamada; usuário inativo ou removido recebe 401 mesmo com sessão ainda existente.
+- **Bootstrap de CSRF:** antes de toda requisição que altera estado (cadastro, verificação, reenvio, recuperação, redefinição, login, logout), o frontend chama `GET /api/auth/csrf` (`src/lib/api/auth.ts`) e reenvia o cookie no header. Os tokens de e-mail não substituem o CSRF, que nunca é desativado.
+- `/me` relê usuário e organização do banco a cada chamada; usuário inativo, não verificado ou removido recebe 401 mesmo com sessão ainda existente.
+- Login exige conta ativa e e-mail verificado; a falha é indistinguível das demais ([security.md §3.1](security.md#31-verificação-de-e-mail-e-recuperação-de-senha)).
 - Toda falha de login retorna a mesma resposta (e-mail inexistente, senha errada, conta desativada).
 - Senhas: `DelegatingPasswordEncoder` (BCrypt por padrão, com prefixo de algoritmo para permitir migração futura).
 - Autorização: papéis `OWNER`, `ADMIN`, `MEMBER` como `ROLE_*`; `@EnableMethodSecurity` ativo (`@PreAuthorize`). Tudo é autenticado por padrão; exceções públicas são explícitas em `SecurityConfig`.
@@ -67,11 +72,12 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
 - **Servidor (Server Components):** `src/lib/api/server.ts` chama `BACKEND_URL` diretamente, repassando apenas o cookie `SESSION`. `BACKEND_URL` não tem prefixo `NEXT_PUBLIC_` e não chega ao navegador. Atenção: o `rewrites` do Next lê `BACKEND_URL` **no build**; o fetch do servidor lê em runtime.
 - **Rotas:**
   - `/app/*`: o layout consulta `/api/auth/me` e redireciona para `/login` sem sessão;
-  - `/login` e `/signup` (grupo `(auth)`): redirecionam para `/app` se já houver sessão. Se o backend estiver fora do ar, mostram o formulário, sem loop de redirect;
+  - `/login`, `/signup`, `/forgot-password` e `/check-email` (grupo `(auth)`): redirecionam para `/app` se já houver sessão. Se o backend estiver fora do ar, mostram o formulário, sem loop de redirect;
+  - `/verify-email` e `/reset-password` (grupo `(account)`): abertas por links de e-mail, funcionam com ou sem sessão. O token vem do fragmento da URL e é apagado da barra de endereço;
   - `/`: redireciona para `/app`.
 
   Isso é navegação, não autorização: o backend valida a sessão em toda chamada.
-- Após o cadastro, o frontend faz login com as mesmas credenciais (mantidas só em memória) e abre `/app`.
+- Após o cadastro, o frontend vai para `/check-email` (não entra no painel). O primeiro login acontece depois da confirmação do e-mail.
 - CSP com nonce por requisição; todas as páginas são renderizadas dinamicamente ([security.md §9](security.md#9-content-security-policy-frontend)).
 
 ## 5. Persistência

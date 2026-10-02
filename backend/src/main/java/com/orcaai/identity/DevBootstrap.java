@@ -5,6 +5,7 @@ import com.orcaai.organizations.OrganizationRepository;
 import com.orcaai.shared.security.Role;
 import com.orcaai.users.User;
 import com.orcaai.users.UserRepository;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,7 +56,10 @@ class DevBootstrap implements ApplicationRunner {
             return;
         }
         Organization organization = organizations.save(new Organization("Organização de desenvolvimento"));
-        users.save(new User(organization.getId(), "Responsável", email, passwordEncoder.encode(password), Role.OWNER));
+        User owner = new User(organization.getId(), "Responsável", email, passwordEncoder.encode(password), Role.OWNER);
+        // Development only: skips email verification so the local environment works without Mailpit.
+        owner.markEmailVerified(Instant.now());
+        users.save(owner);
         log.info("Created development organization and owner user");
     }
 }

@@ -10,6 +10,15 @@ spring:
     # Migrations run as the schema owner; the application connects with the restricted user.
     user: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
+  mail:
+    # Mailpit (docker compose): catches every email locally, nothing is delivered.
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:${MAILPIT_SMTP_PORT:1025}}
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+      mail.smtp.starttls.required: false
+      mail.from: ${MAIL_FROM:nao-responda@orcaai.local}
 
 server:
   servlet:
@@ -19,6 +28,9 @@ server:
         secure: false
 
 orcaai:
+  account:
+    public-url: ${APP_PUBLIC_URL:http://localhost:3000}
+    mail-from: ${MAIL_FROM:nao-responda@orcaai.local}
   dev:
     bootstrap:
       email: ${DEV_BOOTSTRAP_EMAIL:}
@@ -27,3 +39,5 @@ orcaai:
 logging:
   level:
     com.orcaai: debug
+    # Spring transaction internals; too noisy at debug.
+    com.orcaai.shared.tenancy.TenantTransactionManager: info

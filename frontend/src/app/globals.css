@@ -237,3 +237,38 @@ button:disabled {
   font-weight: 600;
   color: var(--color-text);
 }
+
+/* Account pages */
+
+.auth-card h2 {
+  margin: 1.5rem 0 0.25rem;
+  font-size: 1rem;
+}
+
+.auth-hint {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+.auth-links {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.auth-links li + li {
+  margin-top: 0.4rem;
+}
+
+.form-error p {
+  margin: 0 0 0.35rem;
+}
+
+.button-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  text-align: center;
+  text-decoration: none;
+}

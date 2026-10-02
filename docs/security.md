@@ -1,3 +1,4 @@
+
 # Segurança: regras e operação
 
 Complementa [architecture.md](architecture.md). Regras marcadas como **Regra** são obrigatórias em code review.
@@ -44,7 +45,63 @@ O cadastro é a única operação que cria dados sem usuário autenticado. Ele *
 - **E-mail:** normalizado só com trim + lowercase (sem regras de provedor, pontos e `+` preservados). Unicidade garantida pelo banco (`users_email_uk`) e formato normalizado garantido por `CHECK (email = lower(btrim(email)))`. No cadastro concorrente, a constraint é o árbitro final.
 - **Senha:** 12 a 64 caracteres, sem regras de composição. Senhas longas e frases são incentivadas. O limite superior inclui no máximo 72 bytes em UTF-8, porque o BCrypt ignora o excedente; rejeitar é melhor que truncar em silêncio. O hash continua com o `DelegatingPasswordEncoder` (`{bcrypt}`), o que permite migrar para Argon2 sem invalidar senhas.
 - A senha nunca é logada, retornada ou incluída em exceções (`SignupRequest.toString` a omite). O hash é calculado antes de checar o e-mail, para que o tempo de resposta não revele se o e-mail já existe.
-- **Enumeração:** e-mail já cadastrado gera a resposta genérica "Não foi possível criar a conta com os dados informados." (422). Isso não elimina totalmente a enumeração: um cadastro que falha com dados válidos ainda sugere que o e-mail existe. A proteção completa virá com a verificação de e-mail (resposta sempre "verifique seu e-mail"), antes da exposição pública. Até lá, o limite de cadastros por IP reduz o abuso.
+- **Enumeração:** o cadastro responde sempre 202 com a mesma mensagem, exista ou não o e-mail (ver §3.1).
+
+### 3.1 Verificação de e-mail e recuperação de senha
+
+**Estado da conta.**
+- `active`: a conta pode operar (decisão administrativa).
+- `email_verified_at`: o endereço foi confirmado (`null` = pendente).
+
+São conceitos independentes:
+- **Cadastro normal:** cria `active = true` e `email_verified_at = null`.
+- **`DevBootstrap` (só no profile `dev`):** cria o usuário já verificado.
+- **Usuários anteriores a `V5`:** foram marcados como verificados, porque só existiam em desenvolvimento.
+
+**Login.** Só contas ativas **e** verificadas entram. O status é checado **depois** da senha (`SecurityConfig`), então conta inexistente, senha errada, conta desativada e conta não verificada recebem o mesmo 401, com o mesmo corpo e o mesmo custo de BCrypt.
+
+**Tokens** (`OneTimeTokens`):
+- 32 bytes de `SecureRandom`, em Base64 URL-safe sem padding (43 caracteres).
+- O banco guarda só o SHA-256 (32 bytes, `UNIQUE`). Isso basta para um valor aleatório de 256 bits; não há senha a proteger com hash lento.
+- Tabelas separadas por finalidade, `email_verification_tokens` e `password_reset_tokens`, com `created_at`, `expires_at` e `consumed_at`.
+- **Validade:** 24 h para a verificação e 30 min para a redefinição (configuráveis).
+- **Uso único e concorrência:** o consumo é um `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now() RETURNING user_id`. O PostgreSQL trava a linha, e a segunda requisição concorrente encontra 0 linhas. Testado com 4 threads.
+- **Novo token aposenta os anteriores:** um token novo expira os anteriores da mesma finalidade (`expires_at = now()`), então `consumed_at` sempre significa "usado". A emissão trava a linha do usuário (`FOR UPDATE`) para que pedidos simultâneos não deixem dois tokens válidos.
+- O token bruto existe só na memória e no e-mail: nunca em banco, log, exceção ou resposta (`toString` dos DTOs e eventos o omite).
+
+**Links.**
+- Montados a partir de `APP_PUBLIC_URL`, nunca do header `Host` (proteção contra host-header injection). A URL é validada na inicialização: absoluta, `https` (`http` só em localhost), sem query, fragmento ou credenciais.
+- O token vai no **fragmento** (`/verify-email#token=...`), que o navegador não envia ao servidor: não aparece em logs de acesso nem no `Referer`. A página lê o fragmento, apaga-o da barra de endereço e envia o token no corpo de um `POST`.
+- Nenhuma ação acontece num `GET`. A confirmação de e-mail exige um clique explícito, para que scanners de e-mail que abrem links não confirmem contas.
+
+**Cadastro sem enumeração.** `POST /api/auth/signup` responde sempre `202` com "Se os dados puderem ser utilizados, enviaremos as instruções para continuar o cadastro.":
+- **E-mail novo:** cria organização + OWNER pendente + token e envia o e-mail.
+- **E-mail existente:** não cria nada e não altera nada (nome, empresa, senha). Se a conta está pendente e fora do cooldown, reenvia a confirmação.
+- **Cadastro concorrente para o mesmo e-mail:** a constraint única decide; o perdedor tem rollback completo e recebe a mesma resposta.
+
+**Reenvio de confirmação.** `POST /api/auth/resend-verification` responde sempre `202`. Só envia para conta ativa, pendente e fora do cooldown.
+
+**Esqueci minha senha.**
+- `POST /api/auth/forgot-password` responde sempre `202`.
+- Contas inativas nunca recebem token.
+- **Decisão:** contas ainda não verificadas **podem** redefinir a senha. Seguir o link prova o controle da caixa de e-mail, então a redefinição também marca o e-mail como verificado.
+
+**Redefinição.** `POST /api/auth/reset-password` (token + nova senha, mesma política do cadastro), numa única transação:
+1. consome o token;
+2. troca o hash da senha;
+3. expira os demais tokens de redefinição e de verificação;
+4. revoga todas as sessões (`UserSessions`).
+
+Não há login automático.
+
+**Envio de e-mail** (`AccountEmails`):
+- Disparado por evento publicado dentro da transação e entregue **somente após o commit** (`@TransactionalEventListener`). Um rollback nunca gera e-mail com link inútil.
+- O envio é **assíncrono**, para que o tempo de resposta não revele se houve envio.
+- Uma falha de SMTP é registrada só com o tipo do erro (sem endereço, token ou mensagem do servidor). O cliente recebe a resposta normal e pode pedir reenvio.
+- Não há outbox nem fila: um e-mail perdido (falha de SMTP ou restart antes do envio) é recuperado pelo reenvio ou por um novo pedido de redefinição.
+- E-mails em texto + HTML simples, sem imagens externas, rastreadores ou marketing.
+
+**Logs.** Só ID do usuário, tipo do evento e resultado. Nunca e-mail, senha, hash, token ou URL com token. Há teste (`AccountEmailsIntegrationTest`) e verificação no E2E.
 
 Riscos a tratar ao criar a gestão de usuários:
 - **Escalada de privilégio:** ADMIN não pode promover ninguém a OWNER nem alterar OWNER. Impedir a remoção do último OWNER.
@@ -63,16 +120,16 @@ Estratégia: **revogação explícita** via `UserSessions.revokeAll(email)`, que
 |---|---|
 | Usuário desativado ou removido | `revokeAll` |
 | Papel alterado | `revokeAll` (o usuário entra de novo com o papel novo) |
-| Senha alterada ou redefinida | `revokeAll`; o fluxo pode autenticar de novo a sessão atual |
+| Senha alterada ou redefinida | `revokeAll` (a redefinição por e-mail já faz isso; não há login automático) |
 | E-mail alterado | `revokeAll` com o e-mail **antigo** (o índice usa o nome do principal) |
 
-Se a revogação acontecer e o commit falhar, o efeito é apenas um novo login (falha segura).
+`revokeAll` apaga as sessões **na transação de quem chama** (se a alteração falhar, as sessões ficam) e de novo **logo após o commit**. A segunda passada fecha a janela em que um login com a senha antiga, feito enquanto a alteração ainda não estava confirmada, ficaria com sessão válida. Se a repetição pós-commit falhar, isso é registrado em log de erro.
 
 Pendência explícita: quando a gestão de usuários existir, cada operação acima precisa de um teste de integração provando que a sessão anterior recebe 401. O mecanismo base já está coberto por `UserSessionsIntegrationTest`.
 
 Alternativa descartada por enquanto: revalidar o usuário no banco a cada requisição. É mais robusta contra esquecimento, mas custa uma consulta por requisição. Reavaliar se o número de pontos que alteram usuários crescer.
 
-## 5. Rate limiting de login e cadastro
+## 5. Rate limiting das rotas públicas de conta
 
 Em memória (Caffeine), por instância, janela fixa (`AuthRateLimitFilter`):
 
@@ -81,6 +138,10 @@ Em memória (Caffeine), por instância, janela fixa (`AuthRateLimitFilter`):
 | Login | IP | toda tentativa | 30 / 15 min |
 | Login | IP + e-mail normalizado | só falhas (401) | 5 / 15 min |
 | Cadastro | IP | toda tentativa | 5 / 1 h |
+| Reenvio de confirmação + esqueci a senha | IP (limite compartilhado) | toda tentativa | 10 / 1 h |
+| Confirmação de e-mail + redefinição de senha | IP | toda tentativa | 20 / 15 min |
+
+Além disso, há um **cooldown de envio por conta** (2 min, no banco): enquanto ele dura, novos pedidos recebem a mesma resposta, mas nenhum e-mail novo é enviado. O cooldown limita só o envio de e-mails, nunca o login ou o uso de um link já recebido.
 
 - **Não existe limite pelo e-mail sozinho.** Ele permitiria a qualquer pessoa bloquear o login de uma vítima errando a senha de propósito. Falhas vindas de um IP não afetam a vítima em outro IP (coberto por `AuthRateLimitIntegrationTest`).
 - As chaves não dependem de a conta existir: conta existente e inexistente produzem exatamente a mesma sequência de respostas (401 e depois 429, com corpo idêntico).
@@ -151,6 +212,7 @@ CREATE POLICY tenant_isolation ON <tabela>
 | Jobs assíncronos | Contexto de organização explícito antes da transação; sem ele, não veem nada |
 | Consultas administrativas legítimas (suporte, relatórios globais) | Papel separado com `BYPASSRLS`, fora da aplicação, com acesso auditado. Nunca relaxar a política da aplicação |
 | `users`, `organizations`, `spring_session*` | Sem RLS (exceção documentada). `users` é lida por e-mail no login e escrita no cadastro, antes de existir tenant; `organizations` é a própria raiz do tenant, criada no cadastro; `spring_session*` não são dados de tenant. Colocar RLS nelas exigiria um modo "sem tenant" que falharia aberto. O isolamento de `users` fica em `UserRepository` (§3) |
+| `email_verification_tokens`, `password_reset_tokens` | Sem RLS (exceção documentada): são lidas e consumidas por fluxos públicos, sem tenant, e não pertencem a uma organização (`user_id`, não `organization_id`). A proteção é o hash de 256 bits, o uso único e o runtime sem `DELETE`. |
 
 ### Decisão
 

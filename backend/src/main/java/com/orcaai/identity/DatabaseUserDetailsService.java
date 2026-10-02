@@ -27,7 +27,8 @@ class DatabaseUserDetailsService implements UserDetailsService {
                         user.getEmail(),
                         user.getPasswordHash(),
                         user.getRole(),
-                        user.isActive()))
+                        // Unverified accounts cannot sign in; the failure looks like any other (see SecurityConfig).
+                        user.isActive() && user.isEmailVerified()))
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }
 }

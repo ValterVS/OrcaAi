@@ -1,35 +1,40 @@
 package com.orcaai.identity;
 
+import static com.orcaai.support.AccountApi.PASSWORD;
+import static com.orcaai.support.AccountApi.uniqueEmail;
 import static com.orcaai.support.CsrfSupport.csrfToken;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.orcaai.shared.security.Role;
+import com.orcaai.support.AccountApi;
 import com.orcaai.support.IntegrationTest;
+import com.orcaai.support.RecordingMailSender;
 import com.orcaai.support.TestData;
 import com.orcaai.users.User;
 import com.orcaai.users.UserRepository;
-import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
 
 @IntegrationTest
 class SignupIntegrationTest {
 
-    private static final String PASSWORD = "uma senha longa o bastante";
+    @Autowired
+    AccountApi api;
 
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    RecordingMailSender mail;
 
     @Autowired
     UserRepository users;
@@ -44,29 +49,60 @@ class SignupIntegrationTest {
     TestData testData;
 
     @Test
-    void createsOrganizationAndOwnerTogether() throws Exception {
+    void createsOrganizationAndPendingOwnerAndSendsVerification() throws Exception {
         String company = uniqueCompany();
         String email = uniqueEmail();
 
-        signup(company, "Maria Souza", email, PASSWORD)
-                .andExpect(status().isCreated())
-                .andExpect(content().string(""));
+        MockHttpServletResponse response = api.signup(company, "Maria Souza", email, PASSWORD);
 
+        assertThat(response.getStatus()).isEqualTo(202);
         User owner = users.findByEmail(email).orElseThrow();
         assertThat(owner.getName()).isEqualTo("Maria Souza");
         assertThat(owner.getRole()).isEqualTo(Role.OWNER);
         assertThat(owner.isActive()).isTrue();
+        assertThat(owner.isEmailVerified()).isFalse();
         assertThat(owner.getPasswordHash()).startsWith("{bcrypt}").doesNotContain(PASSWORD);
         assertThat(passwordEncoder.matches(PASSWORD, owner.getPasswordHash())).isTrue();
-        assertThat(jdbc.queryForObject("select name from organizations where id = ?", String.class,
-                owner.getOrganizationId())).isEqualTo(company);
+        assertThat(organizationName(owner.getOrganizationId())).isEqualTo(company);
+        assertThat(RecordingMailSender.subject(mail.awaitMessageTo(email, 1))).isEqualTo("Confirme seu e-mail no Orça Aí");
+    }
+
+    @Test
+    void newAndExistingAddressesGetTheSameAnswer() throws Exception {
+        String email = uniqueEmail();
+        MockHttpServletResponse first = api.signup(uniqueCompany(), "Primeira", email, PASSWORD);
+        String secondCompany = uniqueCompany();
+
+        MockHttpServletResponse second = api.signup(secondCompany, "Segunda", email.toUpperCase(), "outra senha bem longa");
+
+        assertThat(second.getStatus()).isEqualTo(first.getStatus()).isEqualTo(202);
+        assertThat(second.getContentAsString()).isEqualTo(first.getContentAsString());
+        assertThat(organizationsNamed(secondCompany)).isZero();
+    }
+
+    @Test
+    void existingAccountIsNeverChangedBySignup() throws Exception {
+        String email = uniqueEmail();
+        String company = uniqueCompany();
+        api.verifiedOwner(company, email, PASSWORD);
+        User before = users.findByEmail(email).orElseThrow();
+
+        api.signup("Empresa Invasora", "Invasor", email, "senha do invasor longa");
+
+        User after = users.findByEmail(email).orElseThrow();
+        assertThat(after.getName()).isEqualTo(before.getName());
+        assertThat(after.getPasswordHash()).isEqualTo(before.getPasswordHash());
+        assertThat(organizationName(after.getOrganizationId())).isEqualTo(company);
+        assertThat(api.login(email, PASSWORD).getStatus()).isEqualTo(204);
+        assertThat(api.login(email, "senha do invasor longa").getStatus()).isEqualTo(401);
+        assertThat(mail.settledMessagesTo(email)).hasSize(1);
     }
 
     @Test
     void storesEmailTrimmedAndLowercasedOnly() throws Exception {
         String local = "Maria.Silva+obra" + UUID.randomUUID();
 
-        signup(uniqueCompany(), "Maria", "  " + local + "@Example.COM ", PASSWORD).andExpect(status().isCreated());
+        api.signup(uniqueCompany(), "Maria", "  " + local + "@Example.COM ", PASSWORD);
 
         assertThat(users.findByEmail(local.toLowerCase() + "@example.com")).isPresent();
     }
@@ -75,41 +111,26 @@ class SignupIntegrationTest {
     void ignoresRoleAndOrganizationSentByClient() throws Exception {
         var existingOrganization = testData.organization();
         String email = uniqueEmail();
-        String body = """
-                {"companyName":"%s","ownerName":"Joao","email":"%s","password":"%s",
-                 "role":"MEMBER","organizationId":"%s","id":"%s"}"""
-                .formatted(uniqueCompany(), email, PASSWORD, existingOrganization.getId(), UUID.randomUUID());
 
-        mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body)
-                        .with(csrfToken(mvc)))
-                .andExpect(status().isCreated());
+        api.postJson("/api/auth/signup", """
+                {"companyName":"%s","ownerName":"Joao","email":"%s","password":"%s",
+                 "role":"MEMBER","organizationId":"%s","id":"%s","emailVerifiedAt":"2026-01-01T00:00:00Z"}"""
+                .formatted(uniqueCompany(), email, PASSWORD, existingOrganization.getId(), UUID.randomUUID()));
 
         User owner = users.findByEmail(email).orElseThrow();
         assertThat(owner.getRole()).isEqualTo(Role.OWNER);
         assertThat(owner.getOrganizationId()).isNotEqualTo(existingOrganization.getId());
-    }
-
-    @Test
-    void duplicateEmailIsRejectedGenericallyAndCreatesNothing() throws Exception {
-        String email = uniqueEmail();
-        signup(uniqueCompany(), "Primeira", email, PASSWORD).andExpect(status().isCreated());
-        String secondCompany = uniqueCompany();
-
-        signup(secondCompany, "Segunda", email.toUpperCase(), PASSWORD)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(AccountService.SIGNUP_REJECTED))
-                .andExpect(jsonPath("$.errors").doesNotExist());
-
-        assertThat(organizationsNamed(secondCompany)).isZero();
+        assertThat(owner.isEmailVerified()).isFalse();
     }
 
     @Test
     void rejectsPasswordsOutsideThePolicy() throws Exception {
-        String accented = "ç".repeat(40);
-
-        for (String password : new String[] {"curta", "x".repeat(65), accented}) {
+        for (String password : new String[] {"curta", "x".repeat(65), "ç".repeat(40)}) {
             String email = uniqueEmail();
-            signup(uniqueCompany(), "Pessoa", email, password)
+            mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).with(csrfToken(mvc))
+                            .content("""
+                                    {"companyName":"Empresa","ownerName":"Pessoa","email":"%s","password":"%s"}"""
+                                    .formatted(email, password)))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.errors[0].field").value("password"));
             assertThat(users.findByEmail(email)).isEmpty();
@@ -117,14 +138,11 @@ class SignupIntegrationTest {
     }
 
     @Test
-    void acceptsLongPassphrases() throws Exception {
-        signup(uniqueCompany(), "Pessoa", uniqueEmail(), "frase longa com espacos e acentos é ok " + "x".repeat(20))
-                .andExpect(status().isCreated());
-    }
-
-    @Test
-    void rejectsInvalidFieldsWithoutCreatingAnything() throws Exception {
-        signup(" ", "", "not-an-email", PASSWORD)
+    void rejectsInvalidFields() throws Exception {
+        mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).with(csrfToken(mvc))
+                        .content("""
+                                {"companyName":" ","ownerName":"","email":"not-an-email","password":"%s"}"""
+                                .formatted(PASSWORD)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[?(@.field == 'companyName')]").exists())
                 .andExpect(jsonPath("$.errors[?(@.field == 'ownerName')]").exists())
@@ -136,68 +154,23 @@ class SignupIntegrationTest {
         String company = uniqueCompany();
 
         mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-                        .content(body(company, "Pessoa", uniqueEmail(), PASSWORD)))
+                        .content("""
+                                {"companyName":"%s","ownerName":"Pessoa","email":"%s","password":"%s"}"""
+                                .formatted(company, uniqueEmail(), PASSWORD)))
                 .andExpect(status().isForbidden());
 
         assertThat(organizationsNamed(company)).isZero();
     }
 
-    @Test
-    void signupThenLoginGivesSessionBoundToTheNewOrganization() throws Exception {
-        String company = uniqueCompany();
-        String email = uniqueEmail();
-        signup(company, "Ana Lima", email, PASSWORD).andExpect(status().isCreated());
-        UUID organizationId = users.findByEmail(email).orElseThrow().getOrganizationId();
-
-        Cookie session = mvc.perform(post("/api/auth/login")
-                        .param("email", email)
-                        .param("password", PASSWORD)
-                        .with(csrfToken(mvc)))
-                .andExpect(status().isNoContent())
-                .andReturn().getResponse().getCookie("SESSION");
-
-        mvc.perform(get("/api/auth/me").cookie(session))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.userName").value("Ana Lima"))
-                .andExpect(jsonPath("$.role").value("OWNER"))
-                .andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
-                .andExpect(jsonPath("$.organizationName").value(company));
-        mvc.perform(get("/api/test/tenancy-probes").cookie(session))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
-    }
-
-    @Test
-    void passwordBeyondBcryptLimitFailsLoginNormally() throws Exception {
-        mvc.perform(post("/api/auth/login")
-                        .param("email", uniqueEmail())
-                        .param("password", "x".repeat(200))
-                        .with(csrfToken(mvc)))
-                .andExpect(status().isUnauthorized());
-    }
-
-    private ResultActions signup(String company, String owner, String email, String password) throws Exception {
-        return mvc.perform(post("/api/auth/signup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body(company, owner, email, password))
-                .with(csrfToken(mvc)));
-    }
-
-    private static String body(String company, String owner, String email, String password) {
-        return """
-                {"companyName":"%s","ownerName":"%s","email":"%s","password":"%s"}"""
-                .formatted(company, owner, email, password);
+    private String organizationName(UUID id) {
+        return jdbc.queryForObject("select name from organizations where id = ?", String.class, id);
     }
 
     private int organizationsNamed(String name) {
         return jdbc.queryForObject("select count(*) from organizations where name = ?", Integer.class, name);
     }
 
-    private static String uniqueCompany() {
+    static String uniqueCompany() {
         return "Reformas " + UUID.randomUUID();
-    }
-
-    private static String uniqueEmail() {
-        return "owner-" + UUID.randomUUID() + "@example.com";
     }
 }

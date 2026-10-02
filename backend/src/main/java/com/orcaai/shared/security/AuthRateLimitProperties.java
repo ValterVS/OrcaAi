@@ -9,7 +9,11 @@ import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties("orcaai.security.rate-limit")
-public record AuthRateLimitProperties(@Valid @NotNull Login login, @Valid @NotNull Signup signup) {
+public record AuthRateLimitProperties(
+        @Valid @NotNull Login login,
+        @Valid @NotNull PerAddress signup,
+        @Valid @NotNull PerAddress emailRequests,
+        @Valid @NotNull PerAddress tokenSubmissions) {
 
     public record Login(
             @Positive int maxAttemptsPerAddress,
@@ -17,6 +21,6 @@ public record AuthRateLimitProperties(@Valid @NotNull Login login, @Valid @NotNu
             @NotNull Duration window) {
     }
 
-    public record Signup(@Positive int maxAttemptsPerAddress, @NotNull Duration window) {
+    public record PerAddress(@Positive int maxAttemptsPerAddress, @NotNull Duration window) {
     }
 }

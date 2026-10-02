@@ -23,7 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @TestPropertySource(properties = {
         "orcaai.security.rate-limit.login.max-attempts-per-address=8",
         "orcaai.security.rate-limit.login.max-failures-per-address-and-account=3",
-        "orcaai.security.rate-limit.signup.max-attempts-per-address=2"
+        "orcaai.security.rate-limit.signup.max-attempts-per-address=2",
+        "orcaai.security.rate-limit.email-requests.max-attempts-per-address=2"
 })
 class AuthRateLimitIntegrationTest {
 
@@ -86,7 +87,26 @@ class AuthRateLimitIntegrationTest {
                     .andReturn().getResponse().getStatus());
         }
 
-        assertThat(statuses).containsExactly(201, 201, 429);
+        assertThat(statuses).containsExactly(202, 202, 429);
+    }
+
+    @Test
+    void emailRequestsAreLimitedPerAddressWithoutLockingTheAccount() throws Exception {
+        List<Integer> statuses = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            statuses.add(mvc.perform(post("/api/auth/forgot-password")
+                            .with(request -> {
+                                request.setRemoteAddr("10.10.0.7");
+                                return request;
+                            })
+                            .with(csrfToken(mvc))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"%s\"}".formatted(victim.getEmail())))
+                    .andReturn().getResponse().getStatus());
+        }
+
+        assertThat(statuses).containsExactly(202, 202, 429);
+        assertThat(login("10.10.0.8", victim.getEmail(), PASSWORD).getStatus()).isEqualTo(204);
     }
 
     /** Status and body of each attempt, so responses can be compared byte for byte. */

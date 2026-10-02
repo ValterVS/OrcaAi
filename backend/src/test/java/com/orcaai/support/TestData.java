@@ -5,6 +5,7 @@ import com.orcaai.organizations.OrganizationRepository;
 import com.orcaai.shared.security.Role;
 import com.orcaai.users.User;
 import com.orcaai.users.UserRepository;
+import java.time.Instant;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -28,6 +29,8 @@ public class TestData {
 
     public User user(Organization organization, String password, Role role) {
         String email = "user-" + UUID.randomUUID() + "@example.com";
-        return users.save(new User(organization.getId(), "Pessoa de Teste", email, passwordEncoder.encode(password), role));
+        User user = new User(organization.getId(), "Pessoa de Teste", email, passwordEncoder.encode(password), role);
+        user.markEmailVerified(Instant.now());
+        return users.save(user);
     }
 }

@@ -3,12 +3,13 @@ package com.orcaai.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.orcaai.shared.error.BusinessException;
 import com.orcaai.support.IntegrationTest;
+import com.orcaai.support.RecordingMailSender;
 import com.orcaai.users.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @IntegrationTest
@@ -21,6 +22,9 @@ class SignupRollbackIntegrationTest {
     UserRepository users;
 
     @Autowired
+    RecordingMailSender mail;
+
+    @Autowired
     JdbcTemplate jdbc;
 
     @Test
@@ -30,10 +34,12 @@ class SignupRollbackIntegrationTest {
         // Bypasses request validation so the database rejects the owner after the organization insert.
         SignupRequest request = new SignupRequest(company, "x".repeat(200), email, "uma senha longa o bastante");
 
-        assertThatThrownBy(() -> accounts.signup(request)).isInstanceOf(BusinessException.class);
+        // Not a duplicate address, so the failure is not mistaken for a concurrent sign-up.
+        assertThatThrownBy(() -> accounts.signup(request)).isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(jdbc.queryForObject("select count(*) from organizations where name = ?", Integer.class, company))
                 .isZero();
         assertThat(users.findByEmail(email)).isEmpty();
+        assertThat(mail.settledMessagesTo(email)).isEmpty();
     }
 }

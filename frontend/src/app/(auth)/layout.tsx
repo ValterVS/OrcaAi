@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { AuthCard } from "@/components/auth/AuthCard";
 import type { CurrentAccount } from "@/lib/api/auth";
 import { getCurrentAccount } from "@/lib/api/server";
 
@@ -14,12 +15,5 @@ export default async function AuthLayout({ children }: { children: ReactNode }) 
     redirect("/app");
   }
 
-  return (
-    <main className="auth-page">
-      <div className="auth-card">
-        <p className="brand">Orça Aí</p>
-        {children}
-      </div>
-    </main>
-  );
+  return <AuthCard>{children}</AuthCard>;
 }

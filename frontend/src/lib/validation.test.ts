@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateSignup } from "./validation";
+import { validateNewPassword, validateSignup } from "./validation";
 
 const valid = {
   companyName: "Reformas Silva",
@@ -30,5 +30,17 @@ describe("validateSignup", () => {
     const errors = validateSignup({ ...valid, companyName: "  ", ownerName: "", email: "maria@" });
 
     expect(Object.keys(errors).sort()).toEqual(["companyName", "email", "ownerName"]);
+  });
+});
+
+describe("validateNewPassword", () => {
+  it("applies the policy and requires a matching confirmation", () => {
+    expect(validateNewPassword({ password: "curta", confirmation: "curta" }).password).toBeDefined();
+    expect(validateNewPassword({ password: "senha longa o bastante", confirmation: "outra" }).confirmation).toBe(
+      "As senhas não conferem.",
+    );
+    expect(validateNewPassword({ password: "senha longa o bastante", confirmation: "senha longa o bastante" })).toEqual(
+      {},
+    );
   });
 });

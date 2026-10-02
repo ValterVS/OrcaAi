@@ -1,15 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api/client";
-import { login, signup, type SignupData } from "@/lib/api/auth";
+import { signup, type SignupData } from "@/lib/api/auth";
 import { genericErrorMessage } from "@/lib/messages";
 import { hasErrors, PASSWORD_RULE, validateSignup, type FieldErrors } from "@/lib/validation";
 import { TextField } from "./TextField";
-
-type Status = "editing" | "submitting" | "created" | "createdNeedsLogin";
 
 const EMPTY: SignupData = { companyName: "", ownerName: "", email: "", password: "" };
 
@@ -21,19 +18,16 @@ function errorsFromServer(error: ApiError): FieldErrors {
   return errors;
 }
 
-function messageFor(error: unknown): string {
-  if (error instanceof ApiError && error.status === 422 && error.problem.detail) {
-    return error.problem.detail;
-  }
-  return genericErrorMessage(error);
-}
-
+/**
+ * The backend answers the same way whether or not the address already has an account, so the
+ * next step is always the "check your email" page.
+ */
 export function SignupForm() {
   const router = useRouter();
   const [data, setData] = useState<SignupData>(EMPTY);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("editing");
+  const [submitting, setSubmitting] = useState(false);
 
   function update(field: keyof SignupData) {
     return (value: string) => setData((current) => ({ ...current, [field]: value }));
@@ -48,50 +42,24 @@ export function SignupForm() {
       return;
     }
 
-    setStatus("submitting");
-    const request: SignupData = {
-      companyName: data.companyName.trim(),
-      ownerName: data.ownerName.trim(),
-      email: data.email.trim(),
-      password: data.password,
-    };
+    setSubmitting(true);
     try {
-      await signup(request);
+      await signup({
+        companyName: data.companyName.trim(),
+        ownerName: data.ownerName.trim(),
+        email: data.email.trim(),
+        password: data.password,
+      });
+      setData(EMPTY);
+      router.replace("/check-email");
     } catch (error) {
-      setStatus("editing");
+      setSubmitting(false);
       if (error instanceof ApiError && error.status === 400 && error.problem.errors?.length) {
         setFieldErrors(errorsFromServer(error));
       } else {
-        setFormError(messageFor(error));
+        setFormError(genericErrorMessage(error));
       }
-      return;
     }
-
-    // The password is only kept in memory long enough to open the first session.
-    setData(EMPTY);
-    setStatus("created");
-    try {
-      await login(request.email, request.password);
-      router.replace("/app");
-      router.refresh();
-    } catch {
-      setStatus("createdNeedsLogin");
-    }
-  }
-
-  if (status === "created" || status === "createdNeedsLogin") {
-    return (
-      <div className="form-success" role="status">
-        <p>Conta criada com sucesso.</p>
-        {status === "created" ? (
-          <p>Entrando no seu espaço...</p>
-        ) : (
-          <p>
-            <Link href="/login">Entre com seu e-mail e senha</Link> para continuar.
-          </p>
-        )}
-      </div>
-    );
   }
 
   return (
@@ -136,8 +104,8 @@ export function SignupForm() {
           {formError}
         </p>
       )}
-      <button type="submit" className="button-primary" disabled={status === "submitting"}>
-        {status === "submitting" ? "Criando conta..." : "Criar conta"}
+      <button type="submit" className="button-primary" disabled={submitting}>
+        {submitting ? "Criando conta..." : "Criar conta"}
       </button>
     </form>
   );

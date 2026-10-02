@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -36,6 +37,9 @@ public class User extends BaseEntity {
 
     @Column(nullable = false)
     private boolean active;
+
+    /** Null until the owner of the address confirms it. Independent of {@code active}. */
+    private Instant emailVerifiedAt;
 
     protected User() {
     }
@@ -76,5 +80,23 @@ public class User extends BaseEntity {
 
     public boolean isActive() {
         return active;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerifiedAt != null;
+    }
+
+    public Instant getEmailVerifiedAt() {
+        return emailVerifiedAt;
+    }
+
+    public void markEmailVerified(Instant at) {
+        if (emailVerifiedAt == null) {
+            emailVerifiedAt = at;
+        }
+    }
+
+    public void changePassword(String newPasswordHash) {
+        this.passwordHash = newPasswordHash;
     }
 }

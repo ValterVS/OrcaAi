@@ -20,7 +20,9 @@ class AuthRateLimitFilterTest {
     private final AuthRateLimitFilter filter = new AuthRateLimitFilter(
             new AuthRateLimitProperties(
                     new AuthRateLimitProperties.Login(6, 2, Duration.ofMinutes(1)),
-                    new AuthRateLimitProperties.Signup(2, Duration.ofMinutes(1))),
+                    new AuthRateLimitProperties.PerAddress(2, Duration.ofMinutes(1)),
+                    new AuthRateLimitProperties.PerAddress(2, Duration.ofMinutes(1)),
+                    new AuthRateLimitProperties.PerAddress(2, Duration.ofMinutes(1))),
             resolver);
 
     @Test
@@ -68,6 +70,24 @@ class AuthRateLimitFilterTest {
     }
 
     @Test
+    void emailRequestsShareOneLimitPerAddress() throws Exception {
+        assertThat(post("/api/auth/resend-verification", "10.0.0.1")).isTrue();
+        assertThat(post("/api/auth/forgot-password", "10.0.0.1")).isTrue();
+
+        assertThat(post("/api/auth/forgot-password", "10.0.0.1")).isFalse();
+        assertThat(post("/api/auth/resend-verification", "10.0.0.2")).isTrue();
+    }
+
+    @Test
+    void tokenSubmissionsAreLimitedPerAddress() throws Exception {
+        assertThat(post("/api/auth/verify-email", "10.0.0.1")).isTrue();
+        assertThat(post("/api/auth/reset-password", "10.0.0.1")).isTrue();
+
+        assertThat(post("/api/auth/verify-email", "10.0.0.1")).isFalse();
+        assertThat(post("/api/auth/reset-password", "10.0.0.2")).isTrue();
+    }
+
+    @Test
     void ignoresOtherRequests() throws Exception {
         for (int i = 0; i < 10; i++) {
             MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/me");
@@ -84,7 +104,11 @@ class AuthRateLimitFilterTest {
     }
 
     private boolean signup(String address) throws Exception {
-        return reachesHandler(new MockHttpServletRequest("POST", "/api/auth/signup"), address, 201);
+        return post("/api/auth/signup", address);
+    }
+
+    private boolean post(String path, String address) throws Exception {
+        return reachesHandler(new MockHttpServletRequest("POST", path), address, 202);
     }
 
     /** Returns whether the request got past the filter; the handler then answers with {@code status}. */

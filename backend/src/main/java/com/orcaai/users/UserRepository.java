@@ -2,7 +2,9 @@ package com.orcaai.users;
 
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Deliberately not a JpaRepository: {@code users} is not filtered by {@code @TenantId}, so there is
@@ -15,6 +17,13 @@ public interface UserRepository extends Repository<User, UUID> {
     User saveAndFlush(User user);
 
     Optional<User> findByIdAndOrganizationId(UUID id, UUID organizationId);
+
+    /**
+     * Only for identity flows where the id comes from a server-side record (a consumed one-time
+     * token), never from a request.
+     */
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findForIdentityFlow(@Param("id") UUID id);
 
     /** For authentication and sign-up only, before any organization is known. */
     Optional<User> findByEmail(String email);

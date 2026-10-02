@@ -22,13 +22,33 @@ function ensureCsrfToken(): Promise<void> {
   return apiFetch<void>("/auth/csrf");
 }
 
-export async function signup(data: SignupData): Promise<void> {
+async function postJson(path: string, body: unknown): Promise<void> {
   await ensureCsrfToken();
-  await apiFetch<void>("/auth/signup", {
+  await apiFetch<unknown>(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(body),
   });
+}
+
+export async function signup(data: SignupData): Promise<void> {
+  await postJson("/auth/signup", data);
+}
+
+export async function resendVerification(email: string): Promise<void> {
+  await postJson("/auth/resend-verification", { email });
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  await postJson("/auth/verify-email", { token });
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await postJson("/auth/forgot-password", { email });
+}
+
+export async function resetPassword(token: string, password: string): Promise<void> {
+  await postJson("/auth/reset-password", { token, password });
 }
 
 export async function login(email: string, password: string): Promise<void> {
