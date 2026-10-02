@@ -1,0 +1,65 @@
+# Orça Aí
+
+SaaS multiempresa para orçamentos e propostas, começando por empresas de obras e reformas.
+
+- Decisões técnicas: [docs/architecture.md](docs/architecture.md)
+- Regras e operação de segurança: [docs/security.md](docs/security.md)
+
+## Estrutura
+
+```
+backend/         Spring Boot 4 (Java 25, Maven), monólito modular
+frontend/        Next.js 16 (TypeScript)
+docs/            Decisões de arquitetura e segurança
+infra/postgres/  Script de inicialização do banco local (usuário da aplicação)
+docker-compose.yml   PostgreSQL local
+```
+
+## Requisitos
+
+- JDK 25
+- Node.js 24
+- Docker
+
+## Rodando localmente
+
+```bash
+cp .env.example .env          # defina POSTGRES_PASSWORD e APP_DB_PASSWORD (e opcionalmente DEV_BOOTSTRAP_*)
+docker compose up -d
+
+cd backend
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev     # http://localhost:8080
+
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev                                                # http://localhost:3000
+```
+
+O usuário restrito da aplicação (`APP_DB_USER`) é criado apenas quando o volume do banco é criado. Se você já tinha um volume de uma versão anterior, recrie com `docker compose down -v` (isso apaga os dados locais).
+
+Com `DEV_BOOTSTRAP_EMAIL` e `DEV_BOOTSTRAP_PASSWORD` preenchidos, o profile `dev` cria uma organização e um usuário `OWNER` na primeira inicialização.
+
+Health check: `GET http://localhost:8080/actuator/health`.
+
+## Testes e build
+
+```bash
+cd backend && ./mvnw clean package     # testes + jar; requer Docker (Testcontainers)
+cd frontend && npm test && npm run lint && npm run typecheck && npm run build
+```
+
+## Variáveis de ambiente
+
+| Variável | Onde | Descrição |
+|---|---|---|
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` | `.env` | Banco local; `POSTGRES_USER` é o dono do schema e roda as migrations |
+| `APP_DB_USER`, `APP_DB_PASSWORD` | `.env` | Usuário restrito usado pela aplicação em `dev` |
+| `DEV_BOOTSTRAP_EMAIL`, `DEV_BOOTSTRAP_PASSWORD` | `.env` (opcional) | Usuário inicial em `dev` |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | ambiente (produção) | Conexão da aplicação (usuário só com DML) |
+| `SPRING_FLYWAY_USER`, `SPRING_FLYWAY_PASSWORD` | ambiente (produção) | Dono do schema, usado só pelas migrations |
+| `SERVER_FORWARD_HEADERS_STRATEGY`, `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` | ambiente (produção) | Só atrás de proxy confiável; ver `docs/security.md` §6 |
+| `BACKEND_URL` | `frontend/.env.local` | Destino do proxy `/api` |
+| `HTTPS_ONLY` | ambiente do frontend | `true` apenas com HTTPS garantido (HSTS) |
+
+Nunca versione `.env`, `.env.local` ou credenciais.

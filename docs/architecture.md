@@ -1,0 +1,84 @@
+# Decisões de arquitetura
+
+Registro curto das decisões que moldam o sistema. Ao mudar uma delas, atualize este arquivo. Regras e operação de segurança: [security.md](security.md).
+
+## 1. Monólito modular
+
+Um único backend Spring Boot, um único banco PostgreSQL. Módulos são pacotes de primeiro nível em `com.orcaai`:
+
+| Pacote          | Responsabilidade                                                       |
+|-----------------|------------------------------------------------------------------------|
+| `shared`        | Transversal: erros, segurança, tenancy, base de persistência           |
+| `identity`      | Login, sessão, usuário autenticado, revogação de sessões               |
+| `organizations` | A organização (tenant)                                                 |
+| `users`         | Usuários de uma organização                                            |
+
+Módulos futuros (`customers`, `leads`, `estimates`, `proposals`, `followups`, `projects`, `billing`, `notifications`, `audit`) entram como pacotes irmãos.
+
+Regras:
+- Um módulo referencia outro por ID (`UUID`), não por associação JPA. Isso mantém tabelas e módulos desacoplados.
+- `shared` não depende de nenhum módulo de negócio.
+- Classes internas de um módulo são package-private sempre que possível.
+- Verticalizações (outros tipos de prestador) devem ser tratadas por configuração/dados dentro dos mesmos módulos, não por cópias de módulos.
+
+## 2. Multi-tenancy
+
+Banco e schema compartilhados, com coluna `organization_id` em toda tabela de negócio.
+
+- A organização atual vem **somente** do principal autenticado na sessão (`TenantContext`). Nenhum endpoint aceita `organizationId` do cliente para decidir o escopo.
+- Entidades de negócio estendem `TenantOwnedEntity`, que usa o `@TenantId` do Hibernate: `organization_id` é preenchido no insert, não tem setter, e consultas JPA (incluindo `findById` e update/delete em lote via JPQL) são filtradas.
+- Sem organização autenticada, o resultado é **falha fechada**: nada é lido e inserts falham na FK.
+- `TenantTransactionManager` publica a organização para o PostgreSQL em cada transação (`app.current_organization_id`, local à transação), base para Row Level Security.
+- **SQL nativo não é filtrado pelo Hibernate:** consultas SQL nativas envolvendo dados multi-tenant exigem filtro explícito por organização e teste de isolamento.
+- `users` não usa `@TenantId` (login antes do tenant). O isolamento fica em `UserRepository`, que não expõe acesso por ID sem organização.
+- Recurso de outra organização responde 404 (não 403).
+- **RLS:** a política é criada junto com cada tabela de negócio, a partir de `customers`, antes de qualquer dado comercial real. Desenho e decisão em [security.md §7](security.md#7-postgresql-row-level-security).
+
+## 3. Autenticação e autorização
+
+- **Sessão no servidor**, não JWT. A sessão fica no PostgreSQL (Spring Session JDBC), então sobrevive a deploys, funciona com múltiplas instâncias e pode ser revogada.
+- Cookie `SESSION`: `HttpOnly`, `Secure` (desligado só no profile `dev`), `SameSite=Lax`, timeout de 8h de inatividade.
+- **CSRF**: double-submit. `GET /api/auth/csrf` emite o cookie `XSRF-TOKEN` (legível por JS); requisições que alteram estado enviam o valor no header `X-XSRF-TOKEN`. O token é rotacionado no login.
+- Login: `POST /api/auth/login` (form `email`, `password`) → 204. Logout: `POST /api/auth/logout` → 204. Usuário atual: `GET /api/auth/me`.
+- Toda falha de login retorna a mesma resposta (e-mail inexistente, senha errada, conta desativada).
+- Senhas: `DelegatingPasswordEncoder` (BCrypt por padrão, com prefixo de algoritmo para permitir migração futura).
+- Autorização: papéis `OWNER`, `ADMIN`, `MEMBER` como `ROLE_*`; `@EnableMethodSecurity` ativo (`@PreAuthorize`). Tudo é autenticado por padrão; exceções públicas são explícitas em `SecurityConfig`.
+- **Mudanças de papel, status, senha ou e-mail** exigem `UserSessions.revokeAll` na mesma operação ([security.md §4](security.md#4-sessões-e-permissões-desatualizadas)).
+- Rate limit de login por endereço e por conta ([security.md §5](security.md#5-rate-limiting-de-login)).
+- O Spring Session usa um gerenciador de transação JDBC próprio (`SessionConfig`). Usar o de JPA causa recursão: abrir sessão JPA resolve o tenant, que lê o contexto de segurança, que é carregado da sessão HTTP. Isso tem teste de regressão.
+
+## 4. Comunicação frontend ↔ backend
+
+- O navegador fala apenas com a origem do frontend. `/api/*` chega ao backend pelo `rewrites` do Next.js em dev; em produção, um reverse proxy roteia `/api/*` direto ao backend.
+- Sem CORS, cookies first-party.
+- JSON; erros no formato RFC 9457 (`application/problem+json`) com `status`, `title`, `detail` e, em validação, `errors[{field, message}]`.
+- O cliente `src/lib/api/client.ts` é para uso no navegador. Chamadas a partir de Server Components precisarão repassar cookies explicitamente (ainda não implementado).
+- CSP com nonce por requisição; todas as páginas são renderizadas dinamicamente ([security.md §9](security.md#9-content-security-policy-frontend)).
+
+## 5. Persistência
+
+- Flyway é a única fonte do schema (`ddl-auto=validate`). Migrations aplicadas nunca são editadas; correções viram nova migration.
+- IDs: UUID v7 gerado pela aplicação, com boa localidade de índice; embute o instante de criação. **IDs não são segredo nem mecanismo de autorização.**
+- `BaseEntity` traz `version` (lock otimista), `created_at` e `updated_at` (`timestamptz`, UTC).
+- `open-in-view` desligado: acesso a dados acontece em serviços transacionais.
+- Dois usuários de banco: dono do schema (Flyway) e usuário de runtime só com DML, sem superusuário e sem `BYPASSRLS` ([security.md §8](security.md#8-usuários-do-banco-em-produção)). O ambiente local reproduz essa separação.
+
+## 6. Erros e validação
+
+- `GlobalExceptionHandler` é o único ponto que monta respostas de erro, inclusive para filtros de segurança (via `SecurityProblemHandler`).
+- Erros inesperados: 500 com mensagem genérica; detalhes apenas no log do servidor.
+- `server.error.include-*` desligados; whitelabel desligado.
+- Validação com Bean Validation (`@Valid`) nos DTOs de entrada.
+
+## 7. Configuração e segredos
+
+- `application.yml` tem padrões seguros (estilo produção) e lê credenciais só de variáveis de ambiente.
+- Cabeçalhos `X-Forwarded-*` são ignorados por padrão; em produção, só são aceitos de um proxy explicitamente confiável ([security.md §6](security.md#6-proxy-e-cabeçalhos-encaminhados-produção)).
+- Profile `dev`: lê o `.env` da raiz (ignorado pelo Git), cookie sem `Secure`, bootstrap opcional de usuário, Flyway com o dono e a aplicação com usuário restrito.
+- Profile `test`: banco via Testcontainers; migrations extras de teste em `db/testmigration` (tabela de prova de isolamento e RLS).
+- Actuator expõe apenas `health`, sem detalhes; probes `liveness`/`readiness` habilitados.
+
+## 8. Backups e operação (a definir no deploy)
+
+- PostgreSQL gerenciado com backup automático e PITR (point-in-time recovery), com restauração testada periodicamente.
+- Sessões ficam no banco: restaurar backup também restaura sessões antigas. Após um incidente, limpar `spring_session`.

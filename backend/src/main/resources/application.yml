@@ -1,0 +1,59 @@
+# Defaults are production-safe. Local overrides live in application-dev.yml.
+spring:
+  application:
+    name: orcaai
+  datasource:
+    # Runtime user: DML only, no ownership of tables (see docs/security.md).
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  session:
+    jdbc:
+      initialize-schema: never
+
+server:
+  # Forwarded headers are ignored unless a trusted proxy is configured explicitly
+  # (SERVER_FORWARD_HEADERS_STRATEGY=native plus SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES).
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+orcaai:
+  security:
+    login-rate-limit:
+      max-attempts-per-address: 30
+      max-failures-per-account: 5
+      window: 15m

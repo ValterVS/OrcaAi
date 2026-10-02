@@ -1,0 +1,29 @@
+spring:
+  config:
+    # The shared .env at the repository root (also used by docker compose). Real environment variables win.
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB}
+    username: ${APP_DB_USER}
+    password: ${APP_DB_PASSWORD}
+  flyway:
+    # Migrations run as the schema owner; the application connects with the restricted user.
+    user: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+
+server:
+  servlet:
+    session:
+      cookie:
+        # Local development runs over plain HTTP.
+        secure: false
+
+orcaai:
+  dev:
+    bootstrap:
+      email: ${DEV_BOOTSTRAP_EMAIL:}
+      password: ${DEV_BOOTSTRAP_PASSWORD:}
+
+logging:
+  level:
+    com.orcaai: debug

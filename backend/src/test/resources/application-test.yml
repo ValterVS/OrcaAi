@@ -1,0 +1,11 @@
+# The datasource comes from Testcontainers (@ServiceConnection).
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/testmigration
+
+orcaai:
+  security:
+    login-rate-limit:
+      max-attempts-per-address: 1000
+      max-failures-per-account: 1000
+      window: 1m

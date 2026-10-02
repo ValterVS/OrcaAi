@@ -1,0 +1,55 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+credentials*.json
+secrets/
+
+# Backend build
+backend/target/
+
+# Frontend build and dependencies
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/coverage/
+frontend/next-env.d.ts
+frontend/*.tsbuildinfo
+frontend/.vercel/
+
+# Local databases and data dumps
+*.sql.gz
+*.dump
+*.backup
+*.sqlite
+*.db
+/pgdata/
+/data/
+
+# Logs and temporary files
+*.log
+/logs/
+npm-debug.log*
+/tmp/
+/temp/
+*.tmp
+*.swp
+*~
+
+# IDE and OS
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
