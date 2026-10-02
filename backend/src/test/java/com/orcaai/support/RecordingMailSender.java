@@ -25,6 +25,7 @@ public class RecordingMailSender extends JavaMailSenderImpl {
     private static final Pattern TOKEN = Pattern.compile("#token=([A-Za-z0-9_-]+)");
 
     private final List<MimeMessage> sent = new CopyOnWriteArrayList<>();
+    private final List<String> senderThreads = new CopyOnWriteArrayList<>();
     private volatile boolean failing;
 
     public RecordingMailSender() {
@@ -45,7 +46,12 @@ public class RecordingMailSender extends JavaMailSenderImpl {
                 throw new MailSendException("Invalid message", ex);
             }
             sent.add(message);
+            senderThreads.add(Thread.currentThread().getName());
         }
+    }
+
+    public List<String> senderThreads() {
+        return List.copyOf(senderThreads);
     }
 
     public void failDeliveries(boolean failing) {

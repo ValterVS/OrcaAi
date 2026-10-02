@@ -37,6 +37,10 @@ public abstract class BaseEntity {
         return id;
     }
 
+    public long getVersion() {
+        return version;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

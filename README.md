@@ -38,6 +38,8 @@ npm run dev                                                # http://localhost:30
 
 Abra `http://localhost:3000/signup` para cadastrar uma empresa. O cadastro cria a organização e o usuário OWNER com o e-mail pendente de confirmação. Os e-mails não saem da máquina: abra o Mailpit em `http://localhost:8025`, use o link "Confirmar e-mail" e depois entre em `/login`. "Esqueci minha senha" funciona do mesmo jeito.
 
+No painel, **Clientes** (`/app/customers`) permite cadastrar, buscar, editar, arquivar e restaurar clientes. Arquivar e restaurar são exclusivos de OWNER e ADMIN.
+
 O usuário restrito da aplicação (`APP_DB_USER`, membro de `orcaai_runtime`) é criado apenas quando o volume do banco é criado. Volumes criados antes desta versão usam um modelo de privilégios antigo: recrie com `docker compose down -v` (isso apaga os dados locais).
 
 Com `DEV_BOOTSTRAP_EMAIL` e `DEV_BOOTSTRAP_PASSWORD` preenchidos, o profile `dev` cria uma organização e um usuário `OWNER` na primeira inicialização.

@@ -70,6 +70,33 @@ class PasswordResetIntegrationTest {
     }
 
     @Test
+    void successfulResetSendsANotificationWithoutSecrets() throws Exception {
+        String email = verifiedOwner();
+        api.forgotPassword(email);
+        String token = mail.awaitToken(email, 2);
+
+        api.resetPassword(token, NEW_PASSWORD);
+
+        var notice = mail.awaitMessageTo(email, 3);
+        String text = RecordingMailSender.text(notice);
+        assertThat(RecordingMailSender.subject(notice)).isEqualTo("Sua senha do Orça Aí foi alterada");
+        assertThat(text).contains("A senha da sua conta foi alterada recentemente.")
+                .contains("Se foi você, nenhuma ação é necessária.")
+                .doesNotContain(token).doesNotContain(NEW_PASSWORD).doesNotContain("#token=").doesNotContain("http");
+    }
+
+    @Test
+    void failedResetSendsNoNotification() throws Exception {
+        String email = verifiedOwner();
+        api.forgotPassword(email);
+        mail.awaitToken(email, 2);
+
+        api.resetPassword("c".repeat(43), NEW_PASSWORD);
+
+        assertThat(mail.settledMessagesTo(email)).hasSize(2);
+    }
+
+    @Test
     void tokenIsSingleUseAndRequestingAnotherRetiresTheFirst() throws Exception {
         String email = verifiedOwner();
         api.forgotPassword(email);

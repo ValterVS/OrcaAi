@@ -94,9 +94,17 @@ São conceitos independentes:
 
 Não há login automático.
 
+**Pendência de manutenção: limpeza de tokens.** Tokens expirados ou usados continuam nas tabelas, mas são inutilizáveis: o consumo exige `consumed_at IS NULL AND expires_at > now()`. Não há job de limpeza, e o runtime não tem `DELETE` nessas tabelas. Definir a retenção (ex.: apagar após 30 dias) com um papel ou job próprio antes de escalar, ou quando o volume justificar.
+
 **Envio de e-mail** (`AccountEmails`):
 - Disparado por evento publicado dentro da transação e entregue **somente após o commit** (`@TransactionalEventListener`). Um rollback nunca gera e-mail com link inútil.
 - O envio é **assíncrono**, para que o tempo de resposta não revele se houve envio.
+- **Executor:** um pool próprio e limitado (`accountEmailExecutor`: 2 threads, fila de 500).
+  - O executor padrão do Boot tem fila ilimitada e, com virtual threads, cria uma thread por tarefa; nenhum dos dois é aceitável sob flood.
+  - Com a fila cheia, o e-mail é descartado com log e o usuário pode pedir de novo; a requisição nunca falha por isso.
+  - No desligamento, aguarda até 20 s pelos envios em andamento.
+- **Timeouts SMTP:** 5 s para conexão, 10 s para leitura e 10 s para escrita.
+- **Notificação de senha alterada:** enviada após cada redefinição bem-sucedida, também só depois do commit. É texto simples, sem link, token ou senha.
 - Uma falha de SMTP é registrada só com o tipo do erro (sem endereço, token ou mensagem do servidor). O cliente recebe a resposta normal e pode pedir reenvio.
 - Não há outbox nem fila: um e-mail perdido (falha de SMTP ou restart antes do envio) é recuperado pelo reenvio ou por um novo pedido de redefinição.
 - E-mails em texto + HTML simples, sem imagens externas, rastreadores ou marketing.
@@ -216,9 +224,10 @@ CREATE POLICY tenant_isolation ON <tabela>
 
 ### Decisão
 
-- A infraestrutura está **ativa**: o hook roda em toda transação e o desenho está provado em tabela de teste.
-- A política RLS deve ser criada **na mesma migration que cria cada tabela de negócio multi-tenant**, começando por `customers`. Isso é obrigatório antes de armazenar qualquer dado comercial real.
-- Cada tabela nova também precisa de um teste de isolamento com SQL direto, como `RowLevelSecurityIntegrationTest`.
+- **Ativo em produção na tabela `customers`** (`V6__create_customers.sql`): `ENABLE` + `FORCE` + `USING` + `WITH CHECK`, com o runtime só com `SELECT, INSERT, UPDATE`.
+  - `CustomerIsolationIntegrationTest` prova, com SQL direto e o usuário restrito, que B não lê, não altera, não arquiva, não insere em nome de A e não move linhas para A.
+  - O E2E repetiu a verificação no PostgreSQL real.
+- **Regra para toda nova tabela de negócio multi-tenant:** a mesma migration cria a tabela, `organization_id`, `ENABLE`/`FORCE ROW LEVEL SECURITY`, a policy com `USING` e `WITH CHECK`, o índice começando por `organization_id` e o `GRANT` mínimo a `orcaai_runtime`. Ela também precisa de um teste de isolamento com SQL direto.
 
 ## 8. Usuários do banco em produção
 

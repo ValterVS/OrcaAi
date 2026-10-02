@@ -18,12 +18,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @IntegrationTest
@@ -48,9 +50,24 @@ class AccountEmailsIntegrationTest {
     @Autowired
     TransactionTemplate transaction;
 
+    @Autowired
+    @Qualifier(AccountEmailExecutorConfig.EXECUTOR)
+    ThreadPoolTaskExecutor emailExecutor;
+
     @AfterEach
     void restoreDelivery() {
         mail.failDeliveries(false);
+    }
+
+    @Test
+    void emailsGoThroughASmallBoundedPool() throws Exception {
+        String email = uniqueEmail();
+        api.signup(uniqueCompany(), "Pessoa", email, PASSWORD);
+        mail.awaitMessageTo(email, 1);
+
+        assertThat(emailExecutor.getMaxPoolSize()).isEqualTo(2);
+        assertThat(emailExecutor.getQueueCapacity()).isEqualTo(500);
+        assertThat(mail.senderThreads()).isNotEmpty().allMatch(name -> name.startsWith("account-email-"));
     }
 
     @Test

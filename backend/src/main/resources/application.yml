@@ -7,6 +7,10 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  jackson:
+    deserialization:
+      # Rejects unexpected fields (organizationId, role, ...) instead of silently ignoring them.
+      fail-on-unknown-properties: true
   jpa:
     open-in-view: false
     hibernate:

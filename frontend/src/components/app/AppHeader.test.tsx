@@ -5,7 +5,7 @@ import { logout, type CurrentAccount } from "@/lib/api/auth";
 import { apiError, router } from "@/test/mocks";
 import { AppHeader } from "./AppHeader";
 
-vi.mock("next/navigation", () => ({ useRouter: () => router }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/app/customers/123" }));
 vi.mock("@/lib/api/auth", () => ({ logout: vi.fn() }));
 
 const account: CurrentAccount = {
@@ -24,6 +24,15 @@ describe("AppHeader", () => {
     expect(screen.getByText("Reformas Silva")).toBeTruthy();
     expect(screen.getByText("Maria Silva")).toBeTruthy();
     expect(screen.getByText("Proprietário")).toBeTruthy();
+  });
+
+  it("links to the overview and customers, marking the current section", () => {
+    render(<AppHeader account={account} />);
+
+    expect(screen.getByRole("link", { name: "Visão geral" }).getAttribute("aria-current")).toBeNull();
+    const customers = screen.getByRole("link", { name: "Clientes" });
+    expect(customers.getAttribute("href")).toBe("/app/customers");
+    expect(customers.getAttribute("aria-current")).toBe("page");
   });
 
   it("logs out and goes to the login page", async () => {

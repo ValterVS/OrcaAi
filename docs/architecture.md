@@ -12,8 +12,9 @@ Um único backend Spring Boot, um único banco PostgreSQL. Módulos são pacotes
 | `identity`      | Cadastro da empresa, login, sessão, conta atual, revogação de sessões  |
 | `organizations` | A organização (tenant)                                                 |
 | `users`         | Usuários de uma organização                                            |
+| `customers`     | Clientes da organização (primeiro módulo de negócio)                   |
 
-Módulos futuros (`customers`, `leads`, `estimates`, `proposals`, `followups`, `projects`, `billing`, `notifications`, `audit`) entram como pacotes irmãos.
+Módulos futuros (`leads`, `estimates`, `proposals`, `followups`, `projects`, `billing`, `notifications`, `audit`) entram como pacotes irmãos.
 
 Regras:
 - Um módulo referencia outro por ID (`UUID`), não por associação JPA. Isso mantém tabelas e módulos desacoplados.
@@ -32,7 +33,7 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
 - **SQL nativo não é filtrado pelo Hibernate:** consultas SQL nativas envolvendo dados multi-tenant exigem filtro explícito por organização e teste de isolamento.
 - `users` não usa `@TenantId` (login antes do tenant). O isolamento fica em `UserRepository`, que não expõe acesso por ID sem organização.
 - Recurso de outra organização responde 404 (não 403).
-- **RLS:** a política é criada junto com cada tabela de negócio, a partir de `customers`, antes de qualquer dado comercial real. Desenho e decisão em [security.md §7](security.md#7-postgresql-row-level-security).
+- **RLS:** ativo em `customers`, a primeira tabela de negócio, e obrigatório na mesma migration de cada tabela de negócio seguinte. Desenho e decisão em [security.md §7](security.md#7-postgresql-row-level-security).
 
 ## 3. Autenticação e autorização
 
@@ -79,6 +80,57 @@ Banco e schema compartilhados, com coluna `organization_id` em toda tabela de ne
   Isso é navegação, não autorização: o backend valida a sessão em toda chamada.
 - Após o cadastro, o frontend vai para `/check-email` (não entra no painel). O primeiro login acontece depois da confirmação do e-mail.
 - CSP com nonce por requisição; todas as páginas são renderizadas dinamicamente ([security.md §9](security.md#9-content-security-policy-frontend)).
+
+## 4.1 Clientes (`customers`)
+
+Primeiro módulo de negócio, e modelo para os próximos.
+
+**Fluxo da requisição:**
+
+```
+Sessão → organizationId → Controller (DTO) → Service → Repository (JPA)
+       → Hibernate @TenantId → SQL → PostgreSQL RLS
+```
+
+**Campos:**
+- `name`: obrigatório, até 150 caracteres, com a grafia preservada.
+- `phone`: até 40 caracteres, texto livre.
+- `email`: trim + lowercase, não precisa ser único.
+- `notes`: até 4000 caracteres, sempre exibido como texto.
+- `archived_at`.
+
+Valores opcionais em branco viram `null`. Ficam de fora de propósito: endereço (pertence a orçamento/proposta/obra), CPF/CNPJ e documentos.
+
+**Endpoints:**
+
+| Endpoint | Papéis | Resposta |
+|---|---|---|
+| `GET /api/customers?status=ACTIVE\|ARCHIVED\|ALL&q=&page=&size=` | todos | página |
+| `GET /api/customers/{id}` | todos | cliente |
+| `POST /api/customers` | todos | 201 |
+| `PUT /api/customers/{id}` + `If-Match: "<version>"` | todos | 200; 409 se outra pessoa salvou antes |
+| `POST /api/customers/{id}/archive` | OWNER, ADMIN | 200 |
+| `POST /api/customers/{id}/restore` | OWNER, ADMIN | 200 |
+
+Não há `DELETE`: clientes são arquivados (`archived_at`) e restaurados, porque serão referenciados por propostas e obras.
+
+**Paginação e busca:**
+- Página padrão de 20 itens, com máximo de 100; `page` vai até 10.000 e `q` até 100 caracteres. Fora disso, a resposta é 400.
+- Ordenação fixa: alterados mais recentemente primeiro, com `id` como desempate. O cliente não escolhe a ordenação, então não há `ORDER BY` montado a partir da entrada.
+- A busca é um "contém" sem diferenciar maiúsculas em nome, e-mail e telefone, via Specification (JPA Criteria), com parâmetro vinculado e curingas de `LIKE` escapados.
+- Não há índice de texto. Com volume, avaliar `pg_trgm`.
+
+**Concorrência:**
+- A resposta inclui `version`, e a edição exige `If-Match`. Uma versão divergente recebe 409 em vez de sobrescrever a alteração de outra pessoa.
+- Duas gravações simultâneas na mesma versão são resolvidas pelo `@Version` do JPA, que também gera 409.
+
+**Entrada:**
+- Propriedades desconhecidas no JSON (`organizationId`, `archived`, `id`...) são rejeitadas com 400 em toda a API (`spring.jackson.deserialization.fail-on-unknown-properties`). Isso impede mass assignment.
+
+**Frontend:**
+- `/app/customers` (lista, busca, filtro, paginação), `/app/customers/new` e `/app/customers/[id]` (detalhe, edição, arquivar/restaurar).
+- As listas e o detalhe são renderizados no servidor a partir da URL (`?status=&q=&page=`). As escritas saem do navegador com CSRF e depois atualizam a página com `router.refresh()`.
+- Os botões de arquivar e restaurar aparecem só para OWNER e ADMIN. Isso é só UX: o backend aplica `@PreAuthorize`.
 
 ## 5. Persistência
 

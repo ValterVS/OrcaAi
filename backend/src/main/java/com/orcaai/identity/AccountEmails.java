@@ -33,7 +33,7 @@ class AccountEmails {
         this.properties = properties;
     }
 
-    @Async
+    @Async(AccountEmailExecutorConfig.EXECUTOR)
     @TransactionalEventListener
     void send(AccountEmailRequested request) {
         try {
@@ -60,6 +60,12 @@ class AccountEmails {
                     "Redefinir senha",
                     "O link é válido por " + properties.passwordResetTtl().toMinutes()
                             + " minutos. Se você não pediu a redefinição, ignore esta mensagem; sua senha continua a mesma.");
+            case PASSWORD_CHANGED -> new Content(
+                    "Sua senha do Orça Aí foi alterada",
+                    "A senha da sua conta foi alterada recentemente.",
+                    null,
+                    null,
+                    "Se foi você, nenhuma ação é necessária. Se não reconhece esta alteração, entre em contato com o suporte.");
         };
 
         MimeMessage message = mailSender.createMimeMessage();
@@ -71,15 +77,18 @@ class AccountEmails {
         return message;
     }
 
+    /** {@code link} and {@code action} are null for notifications without a link. */
     private record Content(String subject, String intro, String link, String action, String footer) {
 
         String text() {
-            return intro + "\n\n" + link + "\n\n" + footer + "\n";
+            String linkLine = link == null ? "" : link + "\n\n";
+            return intro + "\n\n" + linkLine + footer + "\n";
         }
 
         String html() {
-            return "<p>" + HtmlUtils.htmlEscape(intro) + "</p>"
-                    + "<p><a href=\"" + HtmlUtils.htmlEscape(link) + "\">" + HtmlUtils.htmlEscape(action) + "</a></p>"
+            String linkParagraph = link == null ? ""
+                    : "<p><a href=\"" + HtmlUtils.htmlEscape(link) + "\">" + HtmlUtils.htmlEscape(action) + "</a></p>";
+            return "<p>" + HtmlUtils.htmlEscape(intro) + "</p>" + linkParagraph
                     + "<p>" + HtmlUtils.htmlEscape(footer) + "</p>";
         }
     }

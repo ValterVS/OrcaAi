@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { genericErrorMessage } from "@/lib/messages";
 import { hasErrors, validateEmailRequest, type FieldErrors } from "@/lib/validation";
-import { TextField } from "./TextField";
+import { TextField } from "@/components/form/TextField";
 
 type EmailRequestFormProps = {
   submitLabel: string;

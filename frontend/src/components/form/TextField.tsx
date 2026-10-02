@@ -4,7 +4,7 @@ type TextFieldProps = {
   value: string;
   onChange: (value: string) => void;
   error?: string;
-  type?: "text" | "email" | "password";
+  type?: "text" | "email" | "password" | "tel";
   autoComplete?: string;
   hint?: string;
 };

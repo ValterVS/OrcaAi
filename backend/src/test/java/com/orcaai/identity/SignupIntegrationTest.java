@@ -108,19 +108,20 @@ class SignupIntegrationTest {
     }
 
     @Test
-    void ignoresRoleAndOrganizationSentByClient() throws Exception {
+    void rejectsRoleOrganizationAndOtherFieldsSentByClient() throws Exception {
         var existingOrganization = testData.organization();
         String email = uniqueEmail();
 
-        api.postJson("/api/auth/signup", """
-                {"companyName":"%s","ownerName":"Joao","email":"%s","password":"%s",
-                 "role":"MEMBER","organizationId":"%s","id":"%s","emailVerifiedAt":"2026-01-01T00:00:00Z"}"""
-                .formatted(uniqueCompany(), email, PASSWORD, existingOrganization.getId(), UUID.randomUUID()));
+        for (String extra : new String[] {
+                "\"role\":\"MEMBER\"", "\"organizationId\":\"" + existingOrganization.getId() + "\"",
+                "\"id\":\"" + UUID.randomUUID() + "\"", "\"emailVerifiedAt\":\"2026-01-01T00:00:00Z\""}) {
+            MockHttpServletResponse response = api.postJson("/api/auth/signup", """
+                    {"companyName":"%s","ownerName":"Joao","email":"%s","password":"%s",%s}"""
+                    .formatted(uniqueCompany(), email, PASSWORD, extra));
+            assertThat(response.getStatus()).as(extra).isEqualTo(400);
+        }
 
-        User owner = users.findByEmail(email).orElseThrow();
-        assertThat(owner.getRole()).isEqualTo(Role.OWNER);
-        assertThat(owner.getOrganizationId()).isNotEqualTo(existingOrganization.getId());
-        assertThat(owner.isEmailVerified()).isFalse();
+        assertThat(users.findByEmail(email)).isEmpty();
     }
 
     @Test

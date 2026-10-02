@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/api/client";
 import { login } from "@/lib/api/auth";
 import { genericErrorMessage } from "@/lib/messages";
 import { hasErrors, validateLogin, type FieldErrors } from "@/lib/validation";
-import { TextField } from "./TextField";
+import { TextField } from "@/components/form/TextField";
 
 const INVALID_CREDENTIALS = "E-mail ou senha inválidos.";
 

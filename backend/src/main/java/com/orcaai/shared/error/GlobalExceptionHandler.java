@@ -4,11 +4,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -26,6 +28,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    public static final String CONCURRENT_CHANGE =
+            "Este registro foi alterado por outra pessoa. Recarregue a página para ver a versão mais recente.";
+
     public record FieldViolation(String field, String message) {
     }
 
@@ -40,9 +45,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.badRequest().body(problem);
     }
 
+    // Malformed JSON or unknown properties: the parser message may reveal internals, so it is not returned.
+    @Override
+    protected ResponseEntity<Object> handleHttpMessageNotReadable(
+            HttpMessageNotReadableException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        return ResponseEntity.badRequest().body(problem(HttpStatus.BAD_REQUEST, "Requisição inválida."));
+    }
+
     @ExceptionHandler(BusinessException.class)
     ProblemDetail handleBusiness(BusinessException ex) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    ProblemDetail handleBadRequest(BadRequestException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    ProblemDetail handleConflict(ConflictException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    // Two transactions changed the same row at the same time (@Version).
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ProblemDetail handleOptimisticLock(OptimisticLockingFailureException ex) {
+        return problem(HttpStatus.CONFLICT, CONCURRENT_CHANGE);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

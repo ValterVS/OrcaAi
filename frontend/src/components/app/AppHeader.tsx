@@ -1,5 +1,6 @@
 import type { CurrentAccount } from "@/lib/api/auth";
 import { roleLabel } from "@/lib/roles";
+import { AppNav } from "./AppNav";
 import { LogoutButton } from "./LogoutButton";
 
 export function AppHeader({ account }: { account: CurrentAccount }) {
@@ -9,6 +10,7 @@ export function AppHeader({ account }: { account: CurrentAccount }) {
         <span className="brand">Orça Aí</span>
         <span className="app-header-organization">{account.organizationName}</span>
       </div>
+      <AppNav />
       <div className="app-header-user">
         <div className="app-header-identity">
           <span className="app-header-name">{account.userName}</span>

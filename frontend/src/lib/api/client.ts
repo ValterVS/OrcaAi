@@ -65,3 +65,20 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   return (await response.json()) as T;
 }
+
+/** For state-changing calls outside the auth flow: makes sure a CSRF token exists, then sends JSON. */
+export async function sendJson<T>(
+  method: "POST" | "PUT",
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  if (!readCookie(CSRF_COOKIE)) {
+    await apiFetch<void>("/auth/csrf");
+  }
+  return apiFetch<T>(path, {
+    method,
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}

@@ -7,7 +7,7 @@ import { resetPassword } from "@/lib/api/auth";
 import { genericErrorMessage } from "@/lib/messages";
 import { useFragmentToken } from "@/lib/useFragmentToken";
 import { hasErrors, PASSWORD_RULE, validateNewPassword, type FieldErrors } from "@/lib/validation";
-import { TextField } from "./TextField";
+import { TextField } from "@/components/form/TextField";
 
 const INVALID_LINK = "Este link de redefinição é inválido.";
 

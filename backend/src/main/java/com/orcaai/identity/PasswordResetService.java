@@ -89,6 +89,7 @@ class PasswordResetService {
         tokens.expireUnused(PASSWORD_RESET, userId);
         tokens.expireUnused(EMAIL_VERIFICATION, userId);
         sessions.revokeAll(user.getEmail());
+        events.publishEvent(new AccountEmailRequested(Kind.PASSWORD_CHANGED, userId, user.getEmail(), null));
         log.info("Password reset completed for user {}", userId);
     }
 }
